@@ -10,13 +10,24 @@ from typing import Any, Dict, List, Optional, Tuple
 import serial.tools.list_ports
 
 from ..config import Config
-from .mock_data import MOCK_CHANNELS, MOCK_CONTACTS, MOCK_INFO, MOCK_MSGS, MOCK_TELEMETRY, MOCK_VER
+from .mock_data import (
+    MOCK_CHANNELS,
+    MOCK_CONTACTS,
+    MOCK_HEARD_NODES,
+    MOCK_INFO,
+    MOCK_MSGS,
+    MOCK_TELEMETRY,
+    MOCK_VER,
+)
 
 
 class MeshCoreBackend:
     def __init__(self, config: Config) -> None:
         self.config = config
         self._meshcli_bin = self._find_meshcli()
+        # Working copy for interactive simulation state
+        self._sim_contacts = [dict(c) for c in MOCK_CONTACTS]
+        self._sim_heard = [dict(h) for h in MOCK_HEARD_NODES]
 
     def _find_meshcli(self) -> str:
         """Find the meshcli executable in venv or system PATH."""
@@ -124,10 +135,78 @@ class MeshCoreBackend:
         elif main_cmd == "reboot":
             return True, "Reboot command sent. Node is restarting..."
         elif main_cmd in ("contacts", "list", "lc"):
-            out = "Contacts List (4 contacts discovered):\n"
-            for c in MOCK_CONTACTS:
-                out += f" • {c['name']:<16} [{c['type']}] RSSI: {c['rssi']} SNR: {c['snr']} Hops: {c['hops']} Path: {c['path']}\n"
+            out = f"Contacts List ({len(self._sim_contacts)} contacts in device):\n"
+            for c in self._sim_contacts:
+                out += f" • {c['name']:<16} [{c['type']}] RSSI: {c.get('rssi', 'n/a')} SNR: {c.get('snr', 'n/a')} Hops: {c.get('hops', 1)} Path: {c.get('path', 'Direct')}\n"
             return True, out.strip()
+        elif main_cmd in ("pending_contacts", "node_discover", "nd"):
+            if not self._sim_heard:
+                return True, "Keine neuen gehörten Nodes in der Warteschlange (Pending list is empty)."
+            out = f"Heard / Pending Nodes ({len(self._sim_heard)} Knoten gehört):\n"
+            for h in self._sim_heard:
+                out += f" 📡 {h['name']:<16} [Key: {h['key'][:12]}...] Type: {h.get('type', 'Companion')} SNR: {h.get('snr', 'n/a')} RSSI: {h.get('rssi', 'n/a')} ({h.get('last_heard', 'gerade eben')})\n"
+            return True, out.strip()
+        elif main_cmd == "add_pending":
+            target_str = args[1] if len(args) > 1 else ""
+            found = None
+            for idx, h in enumerate(self._sim_heard):
+                if h["name"].lower() == target_str.lower() or h["key"].startswith(target_str):
+                    found = self._sim_heard.pop(idx)
+                    break
+            if found:
+                self._sim_contacts.append({
+                    "name": found["name"],
+                    "key": found["key"],
+                    "type": found.get("type", "Companion"),
+                    "snr": found.get("snr", "+0.0 dB"),
+                    "rssi": found.get("rssi", "-90 dBm"),
+                    "hops": found.get("hops", 1),
+                    "path": found.get("path", "Direct"),
+                    "last_seen": "gerade eben",
+                })
+                return True, f"Knoten '{found['name']}' erfolgreich in die Kontaktliste übernommen!"
+            # If not in heard, still allow adding as new
+            self._sim_contacts.append({
+                "name": target_str or "NeuerKontakt",
+                "key": "ffffffffffff",
+                "type": "Companion",
+                "snr": "n/a",
+                "rssi": "n/a",
+                "hops": 1,
+                "path": "Direct",
+                "last_seen": "gerade eben",
+            })
+            return True, f"Kontakt '{target_str}' in Kontaktliste gespeichert."
+        elif main_cmd == "add_contact":
+            key_arg = args[1] if len(args) > 1 else "000000000000"
+            type_num = args[2] if len(args) > 2 else "1"
+            name_arg = args[3] if len(args) > 3 else "Neu"
+            type_names = {"1": "Companion", "2": "Repeater", "4": "Sensor", "8": "Room"}
+            t_name = type_names.get(str(type_num), "Companion")
+
+            # Remove from heard if present
+            self._sim_heard = [h for h in self._sim_heard if h["name"] != name_arg and h["key"] != key_arg]
+            self._sim_contacts.append({
+                "name": name_arg,
+                "key": key_arg,
+                "type": t_name,
+                "snr": "+5.0 dB",
+                "rssi": "-80 dBm",
+                "hops": 1,
+                "path": "Direct",
+                "last_seen": "gerade eben",
+            })
+            return True, f"Kontakt '{name_arg}' [{t_name}] erfolgreich gespeichert!"
+        elif main_cmd in ("remove_contact", "del_contact"):
+            name_arg = args[1] if len(args) > 1 else ""
+            before_len = len(self._sim_contacts)
+            self._sim_contacts = [c for c in self._sim_contacts if c["name"].lower() != name_arg.lower()]
+            if len(self._sim_contacts) < before_len:
+                return True, f"Kontakt '{name_arg}' erfolgreich gelöscht."
+            return True, f"Kontakt '{name_arg}' nicht gefunden."
+        elif main_cmd == "flush_pending":
+            self._sim_heard.clear()
+            return True, "Liste der gehörten Knoten geleert."
         elif main_cmd in ("contact_info", "ci"):
             name = args[1] if len(args) > 1 else "Unknown"
             return True, f"Contact Information for '{name}':\nKey: a1b2c3d4e5f6\nRole: Repeater\nFlags: tel_l, star\nTimeout: 120s"

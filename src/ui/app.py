@@ -33,7 +33,7 @@ MENU_ITEMS = [
     ("1", "🔌 Verbindung & USB-Ports", "Port auswählen, Baudrate, Simulation und Verbindungstest"),
     ("2", "ℹ️  Node-Status & Telemetrie", "Firmware-Version, Batterie, Hardware und Uhrzeit-Sync"),
     ("3", "💬 Chatfenster & Verlauf", "Interaktives Chatfenster für Kanäle und Direktnachrichten"),
-    ("4", "👥 Kontakte & Pfade", "Kontaktliste, Signalstärke, Pfadsuche und Export/Import"),
+    ("4", "👥 Gehörte Nodes & Kontakte", "Gehörte Nodes interaktiv anzeigen und in Kontakte speichern"),
     ("5", "📡 Repeater & Admin", "Repeater-Login, Remote-Befehle, Status und Traceroute"),
     ("6", "📻 Kanal- & Scope-Verwaltung", "Kanäle 0-7 einrichten, Verschlüsselung, Flood-Scope"),
     ("7", "⚙️  Node-Einstellungen", "Radio-Parameter lesen/setzen, Advertisements senden"),

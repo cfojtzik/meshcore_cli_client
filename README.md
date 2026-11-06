@@ -38,12 +38,14 @@ Ein ressourcenschonender, menügesteuerter Terminal-Client für **MeshCore**, op
 4. **📻 Kanal- & Scope-Verwaltung:**
    * Anzeige und Einrichtung von Kanälen 1–7 (`get_channels`, `set_channel`)
    * Flood-Scope Konfiguration (`scope`)
-5. **👥 Kontakte & Pfadverwaltung:**
-   * Übersicht aller bekannten Knoten mit RSSI-, SNR- und Hop-Zahlen (`contacts`)
-   * Pfadsuche / Path Discovery (`disc_path`) und Pfad-Reset (`reset_path`)
-   * Direktsprung in den Chat mit Kontakten (`[C]`)
-   * Telemetrieabfrage entfernter Knoten (`req_telemetry`)
-   * Kontakt-Export und -Import über URIs (`export_contact`, `import_contact`)
+5. **👥 Gehörte Nodes & Kontaktliste (Dual-Tab Ansicht):**
+   * **Tab 1: 📡 Gehörte Nodes:**
+     * Interaktive Liste aller über Funk empfangener Knoten (`node_discover`, `pending_contacts`) mit SNR, RSSI, Knotentyp und Timestamp.
+     * **Übernahme in Kontakte (`[S]`):** Speichert einen gehörten Knoten direkt in das feste Adressbuch des MeshCore-Nodes (`add_pending` / `add_contact`).
+     * Scan aktualisieren (`[R]`) und Liste leeren (`[F]`).
+   * **Tab 2: 👥 Gespeicherte Kontakte:**
+     * Übersicht aller gespeicherten Kontakte mit Signalwerten, Pfad, Hops und Rollen (`contacts`).
+     * Direkte Aktionen: Chat starten (`[C]`), Kontaktdetails (`[D]`), Pfad-Erkennung (`[P]`), Telemetrie (`[T]`), URI-Export (`[E]`), Löschen (`[X]`) und manuell Hinzufügen (`[+]`).
 6. **📡 Repeater & Fernverwaltung:**
    * Authentifizierung an Repeatern (`login`, `logout`)
    * Ausführung entfernter Befehle (`cmd`)

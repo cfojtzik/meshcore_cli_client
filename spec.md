@@ -41,11 +41,14 @@ Es soll ein interaktiver, menügesteuerter Meshcore-Client als Terminalanwendung
 4. **Kanal- & Scope-Verwaltung**
    * Kanal-Verwaltung (Konfigurieren, Anzeigen, Schlüssel/Namen für Kanäle 1–7)
    * Flood-Scope-Verwaltung (`scope`)
-5. **Kontaktverwaltung (Contacts)**
-   * Kontaktliste mit Signal- und Pfad-Status
-   * Kontaktdetails, Pfad-Erkennung (`disc_path`), Reset und manuelle Pfadwahl
-   * Telemetrie- und Min/Max/Avg-Abfrage von Sensor-Nodes
-   * Kontakt-Export/-Import über URIs
+5. **Gehörte Nodes & Kontaktverwaltung (Interactive Dual-List)**
+   * **Tab 1: 📡 Gehörte Nodes (Heard / Discovered):**
+     * Interaktive Liste über Funk empfangener/gehörter Knoten (`pending_contacts`, `node_discover`) mit Signalwerten (SNR, RSSI), Knotentyp, Public Key und Zeitstempel.
+     * **Übernahme in Kontakte:** Ausgewählte gehörte Knoten können direkt per Tastendruck (`[S]`) mit Namen und Typ in die feste Kontaktliste des MeshCore-Nodes gespeichert werden (`add_pending` / `add_contact`).
+     * Scan- und Bereinigungsfunktionen (`node_discover`, `flush_pending`).
+   * **Tab 2: 👥 Gespeicherte Kontakte (Contacts):**
+     * Übersicht aller gespeicherten Kontakte mit Signalwerten, Pfad, Hops und Rollen.
+     * Direkte Aktionen: Chat starten (`[C]`), Kontaktdetails (`contact_info`), Pfad-Erkennung (`disc_path`), Telemetrieabfrage (`req_telemetry`), URI-Export (`export_contact`) und Löschen (`remove_contact`).
 6. **Repeater & Fernverwaltung**
    * Login/Logout bei Repeatern
    * Ausführung von Remote-Befehlen
