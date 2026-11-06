@@ -129,7 +129,7 @@ class ChatStore:
                 ok, res = backend.run_cli(["chan", str(target.channel_num), text])
         else:
             # Direct message to contact
-            ok, res = backend.run_cli(["msg", target.name, text, "wait_ack"])
+            ok, res = backend.run_cli(["msg", target.name, text])
 
         status = "[ACK]" if ok else "[Fehler]"
         msg = ChatMessage(

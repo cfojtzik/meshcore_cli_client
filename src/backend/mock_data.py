@@ -71,6 +71,16 @@ MOCK_CONTACTS = [
         "path": "BaseStation-1",
         "last_seen": "15 min ago",
     },
+    {
+        "name": "CF T-Deck",
+        "key": "c7f0d1e2c3d40101",
+        "type": "Companion",
+        "snr": "+7.5 dB",
+        "rssi": "-72 dBm",
+        "hops": 1,
+        "path": "Direct",
+        "last_seen": "gerade eben",
+    },
 ]
 
 MOCK_HEARD_NODES = [

@@ -77,6 +77,17 @@ class TestChatStore(unittest.TestCase):
         self.assertEqual(history[0].sender, "Ich")
         self.assertEqual(history[0].text, "DM Testnachricht")
 
+    def test_send_message_to_contact_with_spaces(self):
+        # Specific test for contacts like "CF T-Deck"
+        target = self.chat_store.get_or_create_target("CF T-Deck", is_channel=False)
+        self.assertEqual(target.name, "CF T-Deck")
+        self.assertEqual(target.display_tag, "@CF T-Deck")
+        ok, res = self.chat_store.send_message(self.backend, target, "Hallo T-Deck!")
+        self.assertTrue(ok)
+        history = self.chat_store.get_history(target.id)
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0].text, "Hallo T-Deck!")
+
     def test_sync_from_backend(self):
         new_msgs = self.chat_store.sync_from_backend(self.backend)
         self.assertTrue(new_msgs > 0)

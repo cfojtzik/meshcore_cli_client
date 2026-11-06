@@ -32,7 +32,12 @@ FOCUS_ROOMS = 1
 FOCUS_HISTORY = 2
 
 
-def run_chat_view(stdscr: curses.window, backend: MeshCoreBackend, config: Config) -> None:
+def run_chat_view(
+    stdscr: curses.window,
+    backend: MeshCoreBackend,
+    config: Config,
+    initial_target: Optional[str] = None,
+) -> None:
     """Full-featured interactive chat window with history for channels & DMs."""
     chat_store = ChatStore()
     chat_store.populate_targets_from_backend(backend)
@@ -41,6 +46,28 @@ def run_chat_view(stdscr: curses.window, backend: MeshCoreBackend, config: Confi
     chat_store.sync_from_backend(backend)
 
     active_target_idx = 0
+
+    # If an initial target is specified (e.g. contact name or channel), activate it immediately!
+    if initial_target:
+        clean_name = initial_target.lstrip("@#").strip()
+        is_chan = initial_target.startswith("#")
+        ch_num = None
+        if is_chan:
+            try:
+                ch_num = int(clean_name.split("(")[-1].strip(")"))
+            except ValueError:
+                pass
+
+        target = chat_store.get_or_create_target(
+            name=clean_name,
+            is_channel=is_chan,
+            channel_num=ch_num,
+        )
+        for idx, t in enumerate(chat_store.targets):
+            if t.id == target.id or t.name.lower() == clean_name.lower():
+                active_target_idx = idx
+                break
+
     focus = FOCUS_INPUT
 
     input_buffer: List[str] = []
@@ -251,6 +278,14 @@ def run_chat_view(stdscr: curses.window, backend: MeshCoreBackend, config: Confi
             if active_target_idx < len(chat_store.targets) - 1:
                 active_target_idx += 1
                 scroll_offset = 0
+        elif focus == FOCUS_ROOMS and key in (10, 13, curses.KEY_ENTER, ord(" "), curses.KEY_RIGHT):
+            focus = FOCUS_INPUT
+        elif focus == FOCUS_ROOMS and ord("1") <= key <= ord("9"):
+            num_idx = key - ord("1")
+            if num_idx < len(chat_store.targets):
+                active_target_idx = num_idx
+                scroll_offset = 0
+                focus = FOCUS_INPUT
         elif key in (curses.KEY_UP, curses.KEY_PPAGE) and focus == FOCUS_HISTORY:
             scroll_offset += 1
         elif key in (curses.KEY_DOWN, curses.KEY_NPAGE) and focus == FOCUS_HISTORY:

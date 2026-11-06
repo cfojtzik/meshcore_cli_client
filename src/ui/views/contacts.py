@@ -297,9 +297,13 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
         # -------------------------------------------------------------
         # Actions on Saved Contacts (Tab 2)
         # -------------------------------------------------------------
-        elif active_tab == TAB_SAVED and key in (ord("c"), ord("C")):
-            # Open Chat Window!
-            run_chat_view(stdscr, backend, config)
+        elif active_tab == TAB_SAVED and key in (ord("c"), ord("C"), 10, 13, curses.KEY_ENTER):
+            # Open Chat Window directly for the selected contact!
+            if store.cached_contacts and selected_saved_idx < len(store.cached_contacts):
+                target_node = store.cached_contacts[selected_saved_idx]
+                run_chat_view(stdscr, backend, config, initial_target=target_node.name)
+            else:
+                run_chat_view(stdscr, backend, config)
             # Reload contacts after chat in case changes were made
             store.fetch_saved_contacts(backend)
 
