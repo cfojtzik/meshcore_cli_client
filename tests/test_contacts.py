@@ -77,6 +77,17 @@ class TestContactStore(unittest.TestCase):
         new_names = [c.name for c in self.store.cached_contacts]
         self.assertNotIn(to_delete, new_names)
 
+    def test_delete_contact_with_spaces_and_key(self):
+        # Specifically test deletion of contacts like "CF T-Deck"
+        ok, msg = self.store.delete_saved_contact(
+            self.backend,
+            "CF T-Deck",
+            key="c7f0d1e2c3d40101",
+        )
+        self.assertTrue(ok)
+        new_names = [c.name for c in self.store.cached_contacts]
+        self.assertNotIn("CF T-Deck", new_names)
+
     def test_flush_heard_nodes(self):
         self.store.fetch_heard_nodes(self.backend)
         self.assertTrue(len(self.store.cached_heard) > 0)

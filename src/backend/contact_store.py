@@ -235,10 +235,21 @@ class ContactStore:
             return True, f"Knoten '{target_name}' erfolgreich in die Kontaktliste übernommen!"
         return False, f"Fehler beim Speichern: {res}"
 
-    def delete_saved_contact(self, backend: MeshCoreBackend, name: str) -> Tuple[bool, str]:
-        """Delete contact from node."""
+    def delete_saved_contact(
+        self, backend: MeshCoreBackend, name: str, key: Optional[str] = None
+    ) -> Tuple[bool, str]:
+        """Delete contact from node (by name or key prefix)."""
         ok, res = backend.run_cli(["remove_contact", name])
-        if ok:
+
+        # If name failed or was unknown, try with key prefix if available
+        if ("unknown" in res.lower() or "error" in res.lower()) and key and len(key) >= 4:
+            retry_ok, retry_res = backend.run_cli(["remove_contact", key[:12]])
+            if retry_ok and not ("unknown" in retry_res.lower() or "error" in retry_res.lower()):
+                ok = True
+                res = retry_res
+
+        has_error = not ok or "unknown" in res.lower() or "error" in res.lower()
+        if not has_error:
             self.fetch_saved_contacts(backend)
             return True, f"Kontakt '{name}' erfolgreich entfernt."
         return False, f"Fehler beim Entfernen: {res}"

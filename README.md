@@ -45,7 +45,7 @@ Ein ressourcenschonender, menügesteuerter Terminal-Client für **MeshCore**, op
      * Scan aktualisieren (`[R]`) und Liste leeren (`[F]`).
    * **Tab 2: 👥 Gespeicherte Kontakte:**
      * Übersicht aller gespeicherten Kontakte mit Signalwerten, Pfad, Hops und Rollen (`contacts`).
-     * Direkte Aktionen: Chat starten (`[C]`), Kontaktdetails (`[D]`), Pfad-Erkennung (`[P]`), Telemetrie (`[T]`), URI-Export (`[E]`), Löschen (`[X]`) und manuell Hinzufügen (`[+]`).
+     * Direkte Aktionen: Chat starten (`[C/Enter]`), Kontaktdetails (`[D]`), Pfad-Erkennung (`[P]`), Telemetrie (`[T]`), URI-Export (`[E]`), Löschen (`[L / Entf / X]`) und manuell Hinzufügen (`[+]`).
 6. **📡 Repeater & Fernverwaltung:**
    * Authentifizierung an Repeatern (`login`, `logout`)
    * Ausführung entfernter Befehle (`cmd`)

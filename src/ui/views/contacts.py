@@ -60,10 +60,10 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
 
         # Status Bar
         if active_tab == TAB_HEARD:
-            status_left = "[Tab/←/→] Tab wechseln | [S/Enter] In Kontakte speichern | [R] Scan/Sync | [F] Leeren | [Esc] Menü"
+            status_left = "[Tab/←/→] Tab wechseln | [S/Enter] In Kontakte speichern | [L/Entf] Löschen | [R] Scan | [Esc] Menü"
             status_right = f"Gehört: {heard_count} Knoten"
         else:
-            status_left = "[Tab/←/→] Tab wechseln | [C] Chat | [D] Info | [P] Pfad | [T] Telemetrie | [X] Löschen | [Esc] Menü"
+            status_left = "[Tab/←/→] Tab wechseln | [C/Enter] Chat | [D] Info | [P] Pfad | [L/Entf] Löschen | [Esc] Menü"
             status_right = f"Kontakte: {saved_count} gespeichert"
 
         if status_notice:
@@ -190,7 +190,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                     stdscr,
                     prev_y + 2,
                     2,
-                    f"Signal: SNR {sel_node.snr}, RSSI {sel_node.rssi} | Aktionen: [C] Chat [D] Info [P] Pfad [X] Löschen",
+                    f"Signal: SNR {sel_node.snr}, RSSI {sel_node.rssi} | Aktionen: [C/Enter] Chat [D] Info [P] Pfad [L/Entf] Löschen",
                     get_color(COLOR_NORMAL),
                 )
         else:
@@ -279,6 +279,18 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 selected_heard_idx = 0
                 status_notice = "Liste der gehörten Nodes geleert."
 
+        elif active_tab == TAB_HEARD and key in (
+            ord("l"), ord("L"), ord("x"), ord("X"), curses.KEY_DC, 127, 8, curses.KEY_BACKSPACE
+        ):
+            if store.cached_heard and selected_heard_idx < len(store.cached_heard):
+                node = store.cached_heard[selected_heard_idx]
+                if prompt_confirm(stdscr, "Gehörten Knoten entfernen", f"Knoten '{node.name}' aus Liste entfernen?"):
+                    store.cached_heard = [h for h in store.cached_heard if h.name.lower() != node.name.lower()]
+                    store.save_heard_cache()
+                    show_message(stdscr, "Knoten entfernt", f"Knoten '{node.name}' aus der Gehört-Liste entfernt.")
+                    if selected_heard_idx >= len(store.cached_heard):
+                        selected_heard_idx = max(0, len(store.cached_heard) - 1)
+
         elif active_tab == TAB_HEARD and key in (ord("d"), ord("D")):
             if store.cached_heard and selected_heard_idx < len(store.cached_heard):
                 node = store.cached_heard[selected_heard_idx]
@@ -341,11 +353,13 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 ok, res = backend.run_cli(["export_contact", node.name])
                 show_message(stdscr, f"Export: {node.name}", res, is_error=not ok)
 
-        elif active_tab == TAB_SAVED and key in (ord("x"), ord("X"), curses.KEY_DC):
+        elif active_tab == TAB_SAVED and key in (
+            ord("l"), ord("L"), ord("x"), ord("X"), curses.KEY_DC, 127, 8, curses.KEY_BACKSPACE
+        ):
             if store.cached_contacts and selected_saved_idx < len(store.cached_contacts):
                 node = store.cached_contacts[selected_saved_idx]
                 if prompt_confirm(stdscr, "Kontakt löschen", f"Kontakt '{node.name}' wirklich entfernen?"):
-                    ok, res = store.delete_saved_contact(backend, node.name)
+                    ok, res = store.delete_saved_contact(backend, node.name, key=node.key)
                     show_message(stdscr, "Kontakt löschen", res, is_error=not ok)
                     if selected_saved_idx >= len(store.cached_contacts):
                         selected_saved_idx = max(0, len(store.cached_contacts) - 1)

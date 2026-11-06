@@ -198,12 +198,16 @@ class MeshCoreBackend:
             })
             return True, f"Kontakt '{name_arg}' [{t_name}] erfolgreich gespeichert!"
         elif main_cmd in ("remove_contact", "del_contact"):
-            name_arg = args[1] if len(args) > 1 else ""
+            name_arg = args[1].strip() if len(args) > 1 else ""
             before_len = len(self._sim_contacts)
-            self._sim_contacts = [c for c in self._sim_contacts if c["name"].lower() != name_arg.lower()]
+            self._sim_contacts = [
+                c for c in self._sim_contacts
+                if c["name"].lower().strip() != name_arg.lower()
+                and c.get("key", "").lower().strip() != name_arg.lower()
+            ]
             if len(self._sim_contacts) < before_len:
                 return True, f"Kontakt '{name_arg}' erfolgreich gelöscht."
-            return True, f"Kontakt '{name_arg}' nicht gefunden."
+            return False, f"Kontakt '{name_arg}' nicht gefunden."
         elif main_cmd == "flush_pending":
             self._sim_heard.clear()
             return True, "Liste der gehörten Knoten geleert."
