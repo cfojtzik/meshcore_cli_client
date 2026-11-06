@@ -28,28 +28,32 @@ Ein ressourcenschonender, menügesteuerter Terminal-Client für **MeshCore**, op
    * Abfrage von Gerätename, Hardware, Frequenz, Sendeleistung und Akkustand (`infos`)
    * Firmware-Version (`ver`) und detaillierte Telemetrie (`self_telemetry`)
    * Uhrzeitsynchronisation mit dem Hostsystem (`clock sync`) und Neustart (`reboot`)
-3. **💬 Nachrichten & Kanäle:**
-   * Öffentlicher Broadcast auf Kanal 0 (`public`)
-   * Direktnachrichten an Knoten mit Bestätigung (`msg <name> <text> wait_ack`)
-   * Kanal-Nachrichten für Kanäle 1–7 (`chan`)
-   * Synchronisation ungelesener Nachrichten (`sync_msgs`)
-   * Anzeige und Einrichtung von Kanälen (`get_channels`, `set_channel`)
+3. **💬 Chatfenster & Verlauf (Kanäle & Direktnachrichten):**
+   * Vollwertiges, interaktives Chatfenster mit geteiltem Terminal-Bildschirm (Dual-Pane)
+   * Linke Leiste: Räume (`#Public (0)`, `#Emergency (1)`, `#Local-Team (2)`) und Kontakte (`@BaseStation-1`, `@Mobile-Bravo`) mit Nachrichten-Zählern
+   * Rechter Verlauf: Scrollbare Historie mit Zeitstempeln (`[12:01]`), Absendern, Sendestatus (`[ACK]`, `[RX]`) und Farbkennzeichnung
+   * Untere Live-Eingabe: Sofortiges Tippen und Absenden mit `[Enter]`
+   * Tastaturbedienung: `[Tab]` zum Wechseln zwischen Räumen, Verlauf und Eingabezeile; `[R]` zum Synchronisieren unread Messages; `[N]` für neuen Chat
+   * Persistenter Speicher: Chatverläufe bleiben in `chat_history.json` lokal gespeichert
+4. **📻 Kanal- & Scope-Verwaltung:**
+   * Anzeige und Einrichtung von Kanälen 1–7 (`get_channels`, `set_channel`)
    * Flood-Scope Konfiguration (`scope`)
-4. **👥 Kontakte & Pfadverwaltung:**
+5. **👥 Kontakte & Pfadverwaltung:**
    * Übersicht aller bekannten Knoten mit RSSI-, SNR- und Hop-Zahlen (`contacts`)
    * Pfadsuche / Path Discovery (`disc_path`) und Pfad-Reset (`reset_path`)
+   * Direktsprung in den Chat mit Kontakten (`[C]`)
    * Telemetrieabfrage entfernter Knoten (`req_telemetry`)
    * Kontakt-Export und -Import über URIs (`export_contact`, `import_contact`)
-5. **📡 Repeater & Fernverwaltung:**
+6. **📡 Repeater & Fernverwaltung:**
    * Authentifizierung an Repeatern (`login`, `logout`)
    * Ausführung entfernter Befehle (`cmd`)
    * Status- und Nachbarschaftsabfrage (`req_status`, `req_neighbours`)
    * Traceroute durch das Mesh-Netzwerk (`trace`)
-6. **⚙️ Node-Einstellungen & Advert:**
+7. **⚙️ Node-Einstellungen & Advert:**
    * Auslesen und Anpassen von Radio- und Node-Parametern (`get`, `set`)
    * Lokales Advertisement (`advert`) und Flood-Advertisement (`floodadv`)
    * Export der eigenen Node-Card (`card`)
-7. **💻 Direkte MeshCore Konsole:**
+8. **💻 Direkte MeshCore Konsole:**
    * 100% ungefilterter Zugriff auf jeden beliebigen `meshcli`-Befehl und erweiterte Skripte direkt aus dem Terminal.
 
 ---

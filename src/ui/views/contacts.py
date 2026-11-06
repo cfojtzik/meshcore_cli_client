@@ -4,6 +4,7 @@ import curses
 
 from ...backend.executor import MeshCoreBackend
 from ...config import Config
+from .chat_view import run_chat_view
 from ..colors import (
     COLOR_DIM,
     COLOR_ERROR,
@@ -38,7 +39,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
         draw_header(stdscr, "Kontaktverwaltung (Contacts)", f"Port: {config.port}")
         draw_status_bar(
             stdscr,
-            "[1] Refresh [2] Details [3] Pfad-Scan [4] Reset Pfad [5] Telemetrie [6] Export [7] Import [Esc] Zurück",
+            "[C] Chat [1] Refresh [2] Details [3] Pfad-Scan [4] Reset Pfad [5] Telemetrie [6] Export [7] Import [Esc] Zurück",
             "Contacts",
         )
 
@@ -63,6 +64,8 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
 
         if key in (27, ord("q"), ord("Q")):
             break
+        elif key in (ord("c"), ord("C")):
+            run_chat_view(stdscr, backend, config)
         elif key in (ord("1"), ord("r"), ord("R")):
             loading = True
         elif key in (ord("2"), ord("d"), ord("D")):

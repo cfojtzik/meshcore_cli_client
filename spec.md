@@ -32,22 +32,25 @@ Es soll ein interaktiver, menügesteuerter Meshcore-Client als Terminalanwendung
 2. **Node-Informationen & Telemetrie**
    * Anzeige der Node-Infos (`infos`), Firmware-Version (`ver`), eigene Telemetrie (`self_telemetry`)
    * Uhrzeit-Synchronisation (`clock sync`) und Neustart (`reboot`)
-3. **Nachrichten & Kanäle (Messaging)**
-   * Kanal-Nachrichten (öffentlicher Kanal 0 sowie Kanäle 1–7)
-   * Direktnachrichten an Kontakte mit Empfangsbestätigung (`wait_ack`)
-   * Nachrichtenabruf / -synchronisation (`sync_msgs`, `recv`)
-   * Kanalverwaltung (Konfigurieren, Anzeigen, Schlüssel/Namen)
-   * Flood-Scope-Verwaltung
-4. **Kontaktverwaltung (Contacts)**
+3. **Chatfenster & Chatverlauf (Kanäle & Direktnachrichten)**
+   * Vollwertiges, interaktives Chatfenster mit geteiltem Bildschirm (Dual-Pane)
+   * Linke Seitenleiste: Schnellauswahl aller Kanäle (`#Public (0)`, `#1`–`#7`) und Direktkontakte (`@Kontakt`) inkl. Zähler für Nachrichten
+   * Hauptbereich: Scrollbarer Chatverlauf mit Zeitstempel, Absender, Empfangsstatus (`[ACK]`, `[RX]`) und Farbhervorhebung
+   * Unterer Bereich: Direkte Live-Eingabezeile für unterbrechungsfreies Tippen und Absenden mit `[Enter]`
+   * Integrierte Nachrichtensynchronisation (`sync_msgs`) und Speicherung des Chatverlaufs (`chat_history.json`)
+4. **Kanal- & Scope-Verwaltung**
+   * Kanal-Verwaltung (Konfigurieren, Anzeigen, Schlüssel/Namen für Kanäle 1–7)
+   * Flood-Scope-Verwaltung (`scope`)
+5. **Kontaktverwaltung (Contacts)**
    * Kontaktliste mit Signal- und Pfad-Status
    * Kontaktdetails, Pfad-Erkennung (`disc_path`), Reset und manuelle Pfadwahl
    * Telemetrie- und Min/Max/Avg-Abfrage von Sensor-Nodes
    * Kontakt-Export/-Import über URIs
-5. **Repeater & Fernverwaltung**
+6. **Repeater & Fernverwaltung**
    * Login/Logout bei Repeatern
    * Ausführung von Remote-Befehlen
    * Status- und Nachbarschaftsabfragen (`req_status`, `req_neighbours`)
    * Traceroute-Funktionalität
-6. **Node-Einstellungen & Wartung**
+7. **Node-Einstellungen & Wartung**
    * Parameter auslesen und setzen (`get`/`set`)
    * Senden von Advertisements (Node-Bekanntmachungen)

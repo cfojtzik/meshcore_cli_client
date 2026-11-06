@@ -18,6 +18,7 @@ from .colors import (
     init_colors,
 )
 from .views import (
+    run_chat_view,
     run_connection_view,
     run_contacts_view,
     run_messaging_view,
@@ -31,12 +32,13 @@ from .widgets import draw_box, draw_header, draw_status_bar, prompt_confirm, saf
 MENU_ITEMS = [
     ("1", "🔌 Verbindung & USB-Ports", "Port auswählen, Baudrate, Simulation und Verbindungstest"),
     ("2", "ℹ️  Node-Status & Telemetrie", "Firmware-Version, Batterie, Hardware und Uhrzeit-Sync"),
-    ("3", "💬 Nachrichten & Kanäle", "Broadcast, Direktnachrichten, Kanäle 0-7, Scope"),
+    ("3", "💬 Chatfenster & Verlauf", "Interaktives Chatfenster für Kanäle und Direktnachrichten"),
     ("4", "👥 Kontakte & Pfade", "Kontaktliste, Signalstärke, Pfadsuche und Export/Import"),
     ("5", "📡 Repeater & Admin", "Repeater-Login, Remote-Befehle, Status und Traceroute"),
-    ("6", "⚙️  Node-Einstellungen", "Radio-Parameter lesen/setzen, Advertisements senden"),
-    ("7", "💻 Direkte MeshCore Konsole", "Unbegrenzter CLI-Zugriff auf alle meshcli Befehle"),
-    ("8", "❌ Beenden", "Programm sicher beenden"),
+    ("6", "📻 Kanal- & Scope-Verwaltung", "Kanäle 0-7 einrichten, Verschlüsselung, Flood-Scope"),
+    ("7", "⚙️  Node-Einstellungen", "Radio-Parameter lesen/setzen, Advertisements senden"),
+    ("8", "💻 Direkte MeshCore Konsole", "Unbegrenzter CLI-Zugriff auf alle meshcli Befehle"),
+    ("9", "❌ Beenden", "Programm sicher beenden"),
 ]
 
 
@@ -111,7 +113,7 @@ class MeshCoreTUIApp:
             elif key in (10, 13, curses.KEY_ENTER, ord(" ")):
                 if not self._dispatch_action(stdscr, self.selected_index):
                     break
-            elif ord("1") <= key <= ord("8"):
+            elif ord("1") <= key <= ord("9"):
                 idx = key - ord("1")
                 self.selected_index = idx
                 if not self._dispatch_action(stdscr, idx):
@@ -130,15 +132,17 @@ class MeshCoreTUIApp:
         elif index == 1:
             run_node_info_view(stdscr, self.backend, self.config)
         elif index == 2:
-            run_messaging_view(stdscr, self.backend, self.config)
+            run_chat_view(stdscr, self.backend, self.config)
         elif index == 3:
             run_contacts_view(stdscr, self.backend, self.config)
         elif index == 4:
             run_repeaters_view(stdscr, self.backend, self.config)
         elif index == 5:
-            run_settings_view(stdscr, self.backend, self.config)
+            run_messaging_view(stdscr, self.backend, self.config)
         elif index == 6:
-            run_raw_cli_view(stdscr, self.backend, self.config)
+            run_settings_view(stdscr, self.backend, self.config)
         elif index == 7:
+            run_raw_cli_view(stdscr, self.backend, self.config)
+        elif index == 8:
             return not prompt_confirm(stdscr, "Programm beenden", "Möchtest du den MeshCore Client wirklich beenden?")
         return True

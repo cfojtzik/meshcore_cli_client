@@ -4,6 +4,7 @@ import curses
 
 from ...backend.executor import MeshCoreBackend
 from ...config import Config
+from .chat_view import run_chat_view
 from ..colors import (
     COLOR_DIM,
     COLOR_ERROR,
@@ -26,25 +27,26 @@ from ..widgets import (
 
 
 def run_messaging_view(stdscr: curses.window, backend: MeshCoreBackend, config: Config) -> None:
-    """Messaging menu and actions."""
+    """Messaging and channels management menu."""
     message_log: list = []
 
     while True:
         max_y, max_x = stdscr.getmaxyx()
         stdscr.clear()
 
-        draw_header(stdscr, "Nachrichten & Kanäle (Messaging)", f"Port: {config.port}")
+        draw_header(stdscr, "Kanal- & Scope-Verwaltung", f"Port: {config.port}")
         draw_status_bar(
             stdscr,
-            "[1] Öffentlich [2] Direkt [3] Kanal-Msg [4] Sync Msgs [5] Kanäle [6] Kanal Set [7] Scope [Esc] Zurück",
-            "Messaging",
+            "[0] Chatfenster [1] Broadcast [2] Direkt [3] Kanal-Msg [4] Sync [5] Kanäle [6] Setup [7] Scope [Esc] Zurück",
+            "Kanäle",
         )
 
         view_h = max_y - 3
-        draw_box(stdscr, 1, 0, view_h, max_x, "Nachrichten-Zentrum")
+        draw_box(stdscr, 1, 0, view_h, max_x, "Kanal- und Scope-Zentrum")
 
         # Menu options
         options = [
+            ("0", "💬 Interaktives Chatfenster öffnen (Live-Chat & Verlauf)", "Volles Chatfenster für Kanäle und DMs"),
             ("1", "Öffentliche Nachricht senden (Kanal 0 Broadcast)", "public <text>"),
             ("2", "Direktnachricht an Kontakt senden", "msg <kontakt> <text> [wait_ack]"),
             ("3", "Nachricht an bestimmten Kanal senden (1-7)", "chan <nummer> <text>"),
@@ -71,6 +73,8 @@ def run_messaging_view(stdscr: curses.window, backend: MeshCoreBackend, config: 
 
         if ch in (27, ord("q"), ord("Q")):
             break
+        elif ch in (ord("0"), ord("c"), ord("C")):
+            run_chat_view(stdscr, backend, config)
         elif ch in (ord("1"), ord("p"), ord("P")):
             text = prompt_input(stdscr, "Öffentliche Nachricht (Broadcast)", "Nachricht eingeben:")
             if text:
