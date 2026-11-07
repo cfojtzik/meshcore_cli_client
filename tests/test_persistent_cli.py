@@ -201,6 +201,16 @@ class PersistentMeshCLITests(unittest.TestCase):
         messages = json.loads(self.session.process_success(["sync_msgs"], True, output))
         self.assertIn("partial $$ sync", [message["text"] for message in messages])
 
+    def test_indented_pending_json_does_not_create_lastmod_node(self):
+        key = "ab" * 32
+        output = json.dumps(
+            {key: {"public_key": key, "adv_name": "Real", "lastmod": 1794055014}},
+            indent=4,
+        )
+        merged = json.loads(self.session.process_success(["pending_contacts"], True, output))
+        self.assertEqual(list(merged), [key])
+        self.assertEqual(merged[key]["adv_name"], "Real")
+
     def test_plain_pending_output_is_not_replaced_by_empty_cache(self):
         key = "ab" * 32
         output = self.session.process_success(
@@ -333,6 +343,64 @@ class FullBackendProcessTests(unittest.TestCase):
                 self.assertEqual(chats.sync_from_backend(backend), 0)
             finally:
                 backend.close()
+
+
+REAL_MESHCLI = Path(sys.executable).parent / "meshcli"
+
+
+@unittest.skipUnless(REAL_MESHCLI.exists(), "meshcore-cli is not installed in this environment")
+class RealMeshCLITests(unittest.TestCase):
+    """The unmodified meshcli against an emulated companion (no radio)."""
+
+    def test_real_meshcli_reports_adverts_and_saved_last_adverts(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from companion_emulator import FakeCompanion
+
+        saved_key, new_key = "aa" * 32, "bb" * 32
+        companion = FakeCompanion(saved_contacts={saved_key: "Saved Relay"})
+        original = PersistentMeshCLI
+
+        def tcp_session(command, **kwargs):
+            # Only the transport differs: TCP instead of a USB serial device.
+            index = command.index("-s")
+            command = (
+                command[:index]
+                + ["-t", "127.0.0.1", "-p", str(companion.tcp_port)]
+                + command[index + 4:]
+            )
+            return original(command, **kwargs)
+
+        config = Config(config_file=None)
+        config.port = "/dev/emulated"
+        config.timeout = 10
+        backend = MeshCoreBackend(config)
+        backend._meshcli_bin = str(REAL_MESHCLI)
+        try:
+            with patch("src.backend.executor.PersistentMeshCLI", side_effect=tcp_session):
+                store = ContactStore(storage_path=None)
+                store.fetch_saved_contacts(backend)
+                heard = store.fetch_heard_nodes(backend)
+                # Saved contact appears from its stored last advert at once.
+                self.assertEqual([node.name for node in heard], ["Saved Relay"])
+                self.assertTrue(heard[0].is_saved)
+
+                companion.push_advert(saved_key)
+                companion.push_new_advert(new_key, "Brand New")
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and not (
+                    backend.get_heard_adverts() and backend._event_buffer.pending_snapshot()
+                ):
+                    time.sleep(0.05)
+                self.assertEqual(backend.get_heard_adverts()[0]["public_key"], saved_key)
+
+                heard = store.fetch_heard_nodes(backend)
+                by_name = {node.name: node for node in heard}
+                self.assertEqual(set(by_name), {"Saved Relay", "Brand New"})
+                self.assertFalse(by_name["Brand New"].is_saved)
+                self.assertTrue(by_name["Saved Relay"].is_saved)
+        finally:
+            backend.close()
+            companion.close()
 
 
 class BackendSessionTests(unittest.TestCase):

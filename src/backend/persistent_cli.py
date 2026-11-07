@@ -585,7 +585,8 @@ class PersistentMeshCLI:
             return output
 
         if name == "pending_contacts":
-            for value in self._json_values(output):
+            json_values = self._json_values(output)
+            for value in json_values:
                 records: Any = value
                 if isinstance(records, dict) and isinstance(
                     records.get("pending_contacts"), (dict, list)
@@ -599,8 +600,9 @@ class PersistentMeshCLI:
                     self._events.merge_pending(
                         contact for contact in records if isinstance(contact, dict)
                     )
-            # Older/text-only output is additive and must never be erased.
-            for line in output.splitlines():
+            # Older/text-only output is additive and must never be erased. JSON
+            # lines such as '"lastmod": 1794055014' must not be read as text.
+            for line in ([] if json_values else output.splitlines()):
                 match = re.fullmatch(
                     r"\s*(?P<name>.+?):\s*(?P<key>[0-9a-fA-F]{8,64})\s*", line
                 )

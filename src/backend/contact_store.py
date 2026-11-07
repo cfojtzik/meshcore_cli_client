@@ -134,6 +134,17 @@ def _format_timestamp(value: Any) -> str:
         return str(value).strip()
 
 
+def _epoch(value: Any) -> float:
+    """Return a positive Unix timestamp for sorting, otherwise 0."""
+    if value is None or isinstance(value, bool):
+        return 0.0
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return timestamp if timestamp > 0 else 0.0
+
+
 def _format_out_path(path: Any, path_len: int, hash_mode: Any) -> str:
     text = str(path or "").strip()
     if not text:
@@ -230,6 +241,7 @@ def _node_from_record(record: Dict[str, Any], is_saved: bool) -> Optional["NodeI
         path=path,
         last_seen=_format_timestamp(timestamp),
         is_saved=is_saved,
+        heard_at=_epoch(timestamp),
     )
 
 
@@ -482,6 +494,7 @@ class NodeItem:
     path: str = "Direct"
     last_seen: str = "gerade eben"
     is_saved: bool = False
+    heard_at: float = 0.0  # Unix time of the last advert, 0 when unknown
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -500,6 +513,7 @@ class NodeItem:
             path=str(data.get("path", "Direct")),
             last_seen=str(data.get("last_seen", "n/a")),
             is_saved=bool(data.get("is_saved", False)),
+            heard_at=_epoch(data.get("heard_at")),
         )
 
 
@@ -664,6 +678,7 @@ class ContactStore:
                     saved_match,
                     last_seen=_format_timestamp(timestamp),
                     is_saved=True,
+                    heard_at=_epoch(timestamp),
                 )
             else:
                 existing = next(
@@ -673,12 +688,25 @@ class ContactStore:
                 if existing is not None:
                     if timestamp is not None:
                         existing.last_seen = _format_timestamp(timestamp)
+                        existing.heard_at = max(existing.heard_at, _epoch(timestamp))
                     continue
                 item = _node_from_record(
                     {"public_key": key, "last_advert": timestamp}, is_saved=False
                 )
             if item is not None:
                 newly_heard.append(item)
+
+        # The companion records the last advert of every saved contact, also
+        # while this client was not running. Live adverts are rare (often hours
+        # apart), so these timestamps are the primary source of heard nodes.
+        for contact in self.cached_contacts:
+            if contact.heard_at <= 0:
+                continue
+            if any(
+                node.is_saved and _same_node(node, contact) for node in newly_heard
+            ):
+                continue
+            newly_heard.append(replace(contact, is_saved=True))
 
         saved_names = {contact.name.strip().casefold() for contact in self.cached_contacts}
         saved_keys = [contact.key for contact in self.cached_contacts if contact.key]
@@ -712,6 +740,9 @@ class ContactStore:
                     item.key = existing.key
                 if item.last_seen == "n/a" and existing.last_seen != "n/a":
                     item.last_seen = existing.last_seen
+                if existing.heard_at > item.heard_at:
+                    item.heard_at = existing.heard_at
+                    item.last_seen = existing.last_seen
                 # An advert placeholder (key prefix only) must not replace an
                 # already known name and type of the same node.
                 placeholder = bool(item.key) and item.name == item.key[:12]
@@ -735,6 +766,8 @@ class ContactStore:
                 retained.append(node)
             elif not is_saved(node):
                 retained.append(node)
+        # Most recently heard first; nodes without a timestamp keep their order.
+        retained.sort(key=lambda node: node.heard_at, reverse=True)
         self.cached_heard = retained
         self.save_heard_cache()
         return self.cached_heard

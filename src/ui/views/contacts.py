@@ -87,6 +87,13 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
     task = BackgroundTask()
 
     def run_io(title: str, func: Callable[[], Any]) -> Optional[Any]:
+        if task.busy:
+            show_message(
+                stdscr,
+                title,
+                "Die Liste wird gerade im Hintergrund aktualisiert. Bitte in einem Moment erneut versuchen.",
+            )
+            return None
         try:
             result = run_with_progress(stdscr, task, title, func)
         finally:
@@ -103,12 +110,14 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
         store.fetch_saved_contacts(backend)
         return store.fetch_heard_nodes(backend, discover=discover)
 
-    def initial_load() -> Any:
-        return refresh_nodes(discover=True)
-
     stdscr.timeout(100)
-    run_io("Kontakte laden", initial_load)
-    last_refresh = last_discovery = time.monotonic()
+    # No blocking load screen: show cached data at once. A quick refresh runs
+    # immediately in the background, followed by one radio discovery.
+    opened_at = time.monotonic()
+    last_refresh = opened_at - max(1, getattr(config, "refresh_interval", 5))
+    last_discovery = opened_at
+    initial_discovery_pending = True
+    pending_label = "Kontakte laden"
     active_tab = TAB_HEARD
     selected_heard_idx = 0
     selected_saved_idx = 0
@@ -119,6 +128,23 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
     auto_selected_idx = 0
     auto_selected_node: Optional[Any] = None
     exit_when_done = False
+
+    def start_background(action: str, label: str) -> bool:
+        nonlocal pending_auto, auto_selected_idx, auto_selected_node, pending_label
+        heard_snapshot = list(store.cached_heard)
+        auto_selected_idx = selected_heard_idx
+        auto_selected_node = (
+            heard_snapshot[selected_heard_idx]
+            if 0 <= selected_heard_idx < len(heard_snapshot)
+            else None
+        )
+        if task.start(
+            lambda discover=action == AUTO_DISCOVERY: refresh_nodes(discover=discover)
+        ):
+            pending_auto = action
+            pending_label = label
+            return True
+        return False
 
     try:
         while True:
@@ -134,6 +160,12 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 last_refresh = finished_at
                 if action == AUTO_DISCOVERY:
                     last_discovery = finished_at
+                elif initial_discovery_pending:
+                    # The first quick load is done; discovery is due next.
+                    initial_discovery_pending = False
+                    last_discovery = finished_at - discovery_interval(
+                        getattr(config, "refresh_interval", 5)
+                    )
 
                 if selected_heard_idx == auto_selected_idx:
                     selected_heard_idx = stable_selection_index(
@@ -144,7 +176,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                         0, min(selected_heard_idx, len(store.cached_heard) - 1)
                     )
                 auto_selected_node = None
-                label = "Auto-Discovery" if action == AUTO_DISCOVERY else "Auto-Refresh"
+                label = pending_label
                 if completed.success:
                     status_notice = f"{label}: {len(store.cached_heard)} gehörte Knoten."
                 else:
@@ -159,19 +191,13 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                     now, last_refresh, last_discovery, refresh_interval
                 )
                 if action is not None:
-                    heard_snapshot = list(store.cached_heard)
-                    auto_selected_idx = selected_heard_idx
-                    auto_selected_node = (
-                        heard_snapshot[selected_heard_idx]
-                        if 0 <= selected_heard_idx < len(heard_snapshot)
-                        else None
-                    )
-                    if task.start(
-                        lambda discover=action == AUTO_DISCOVERY: refresh_nodes(
-                            discover=discover
-                        )
-                    ):
-                        pending_auto = action
+                    if action == AUTO_DISCOVERY:
+                        label = "Auto-Discovery"
+                    elif initial_discovery_pending:
+                        label = "Kontakte laden"
+                    else:
+                        label = "Auto-Refresh"
+                    start_background(action, label)
 
             max_y, max_x = stdscr.getmaxyx()
             stdscr.clear()
@@ -191,7 +217,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 status_right = f"Kontakte: {saved_count}"
             auto_status = f"Auto: {refresh_interval}s"
             if task.busy and pending_auto is not None:
-                auto_status += " (läuft)"
+                auto_status += f" ({pending_label} läuft …)"
             if exit_when_done:
                 auto_status += " – beenden nach Abschluss"
             status_details = f"{status_notice} | " if status_notice else ""
@@ -339,7 +365,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                     node = current_list[selected_heard_idx]
                     if key in (10, 13, curses.KEY_ENTER):
                         run_chat_view(stdscr, backend, config, initial_target=node.name)
-                        run_io("Kontakte aktualisieren", lambda: refresh_nodes(discover=False))
+                        last_refresh = float("-inf")  # Refresh in the background next tick.
                     else:
                         show_message(
                             stdscr,
@@ -380,18 +406,14 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 else:
                     show_message(stdscr, "Kein Knoten", "Kein gehörter Knoten zum Speichern vorhanden.", is_error=True)
             elif active_tab == TAB_HEARD and key in (ord("r"), ord("R")):
-                selected_node = (
-                    current_list[selected_heard_idx]
-                    if 0 <= selected_heard_idx < len(current_list)
-                    else None
-                )
-                result = run_io("Gehörte Nodes scannen", lambda: refresh_nodes(discover=True))
-                if result is not None:
-                    last_refresh = last_discovery = time.monotonic()
-                    selected_heard_idx = stable_selection_index(
-                        store.cached_heard, selected_node, selected_heard_idx
-                    )
-                    status_notice = f"Aktualisiert: {len(store.cached_heard)} gehörte Knoten."
+                # Discovery waits several seconds for radio replies; run it in
+                # the background so the list stays usable meanwhile.
+                if task.busy:
+                    status_notice = "Discovery startet nach der laufenden Aktualisierung …"
+                    last_discovery = time.monotonic() - discovery_interval(refresh_interval)
+                elif start_background(AUTO_DISCOVERY, "Discovery"):
+                    initial_discovery_pending = False
+                    status_notice = "Discovery läuft im Hintergrund …"
             elif active_tab == TAB_HEARD and key in (ord("f"), ord("F")):
                 if prompt_confirm(stdscr, "Gehörte Nodes leeren", "Möchtest du die Liste der gehörten Nodes leeren?"):
                     result = run_io("Gehörte Nodes leeren", lambda: store.flush_heard_nodes(backend))
@@ -439,7 +461,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                     run_chat_view(stdscr, backend, config, initial_target=target_node.name)
                 else:
                     run_chat_view(stdscr, backend, config)
-                run_io("Kontakte aktualisieren", lambda: store.fetch_saved_contacts(backend))
+                last_refresh = float("-inf")  # Refresh in the background next tick.
             elif active_tab == TAB_SAVED and key in (ord("r"), ord("R")):
                 result = run_io("Kontakte laden", lambda: store.fetch_saved_contacts(backend))
                 if result is not None:

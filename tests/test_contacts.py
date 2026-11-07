@@ -251,6 +251,24 @@ class TestContactStore(unittest.TestCase):
         self.assertIn(unknown_key[:12], by_name)
         self.assertFalse(by_name[unknown_key[:12]].is_saved)
 
+    def test_saved_contacts_with_last_advert_are_heard_newest_first(self):
+        old_key, new_key, never_key = "a1" * 32, "b2" * 32, "c3" * 32
+        output = keyed_output(
+            contact_record("Old Relay", old_key, 2, last_advert=1762432000),
+            contact_record("New Room", new_key, 3, last_advert=1762439000),
+            contact_record("Imported Only", never_key, 1, last_advert=0),
+        )
+        backend = ScriptedBackend((True, output), (True, "{}"))
+
+        self.store.fetch_saved_contacts(backend)
+        heard = self.store.fetch_heard_nodes(backend)
+
+        self.assertEqual([node.name for node in heard], ["New Room", "Old Relay"])
+        self.assertTrue(all(node.is_saved for node in heard))
+        self.assertEqual(heard[0].type_id, 3)
+        reloaded = ContactStore(storage_path=self.storage_file)
+        self.assertEqual(reloaded.cached_heard[0].heard_at, 1762439000)
+
     def test_deleted_contact_heard_again_is_no_longer_marked_saved(self):
         key = "cc" * 32
         self.store.cached_heard = [
@@ -292,9 +310,10 @@ class TestContactStore(unittest.TestCase):
             backend.calls,
             [(["node_discover"], True), (["pending_contacts"], True)],
         )
+        # Sorted by most recent advert: the timestamped pending node first.
         self.assertEqual(
             [node.name for node in heard],
-            [("88" * 32)[:12], "Discovered Pending"],
+            ["Discovered Pending", ("88" * 32)[:12]],
         )
         self.assertEqual([node.type_id for node in heard], [2, 2])
 

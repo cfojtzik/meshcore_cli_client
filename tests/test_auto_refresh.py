@@ -173,7 +173,33 @@ class AutoRefreshSchedulerTests(unittest.TestCase):
 
 
 class ContactsAutoRefreshTests(unittest.TestCase):
-    def test_initial_discovery_then_auto_refresh_and_clean_busy_exit(self):
+    def test_opens_without_load_screen_then_refreshes_and_discovers(self):
+        store = FakeContactStore()
+        window = FakeWindow(keys=[None, None, 27])
+        config = SimpleNamespace(
+            simulation_mode=True, port="/dev/test", refresh_interval=5
+        )
+
+        with (
+            patch("src.ui.views.contacts.ContactStore", return_value=store),
+            patch("src.ui.views.contacts.BackgroundTask", InlineTask),
+            patch("src.ui.views.contacts.run_with_progress") as progress,
+            patch("src.ui.views.contacts.show_message") as show_message,
+        ):
+            run_contacts_view(window, object(), config)
+
+        progress.assert_not_called()  # No blocking load screen on open.
+        # Quick refresh first, then exactly one discovery right after it.
+        self.assertEqual(store.discover_calls, [False, True])
+        self.assertEqual(store.saved_calls, 2)
+        show_message.assert_not_called()
+        self.assertEqual(window.timeouts[0], 100)
+        self.assertEqual(window.timeouts[-1], -1)
+        rendered = "".join(write[2] for write in window.writes)
+        self.assertIn("Relay", rendered)  # Cached data is shown immediately.
+        self.assertIn("Auto: 5s", rendered)
+
+    def test_busy_background_task_finishes_before_exit(self):
         store = FakeContactStore(auto_delay=0.02)
         window = FakeWindow(keys=[27])
         config = SimpleNamespace(
@@ -182,20 +208,14 @@ class ContactsAutoRefreshTests(unittest.TestCase):
 
         with (
             patch("src.ui.views.contacts.ContactStore", return_value=store),
-            patch("src.ui.views.contacts.run_with_progress", side_effect=immediate_progress),
-            patch("src.ui.views.contacts.next_auto_action", return_value=AUTO_REFRESH),
             patch("src.ui.views.contacts.show_message") as show_message,
         ):
             run_contacts_view(window, object(), config)
 
-        self.assertEqual(store.saved_calls, 2)
-        self.assertEqual(store.discover_calls, [True, False])
+        self.assertEqual(store.discover_calls, [False])
         self.assertTrue(store.auto_completed.is_set())
         show_message.assert_not_called()
-        self.assertEqual(window.timeouts[0], 100)
-        self.assertIn(100, window.timeouts)
         self.assertEqual(window.timeouts[-1], -1)
-        self.assertIn("Auto: 5s", "".join(write[2] for write in window.writes))
 
     def test_auto_error_is_status_only_and_does_not_open_popup(self):
         store = FakeContactStore(auto_error=RuntimeError("offline"))
@@ -218,8 +238,8 @@ class ContactsAutoRefreshTests(unittest.TestCase):
 
         show_message.assert_not_called()
         rendered = "".join(write[2] for write in window.writes)
-        self.assertIn("Auto-Refresh fehlgeschlagen: offline", rendered)
-        self.assertEqual(store.discover_calls, [True, False])
+        self.assertIn("Kontakte laden fehlgeschlagen: offline", rendered)
+        self.assertEqual(store.discover_calls, [False])
         self.assertEqual(window.timeouts[-1], -1)
 
 
