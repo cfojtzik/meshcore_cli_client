@@ -44,7 +44,7 @@ Ein ressourcenschonender, menügesteuerter Terminal-Client für **MeshCore**, op
 5. **👥 Gehörte Nodes & Kontaktliste (Dual-Tab Ansicht):**
    * **Tab 1: 📡 Gehörte Nodes:**
      * Interaktive Liste aller über Funk empfangener Knoten (`node_discover`, `pending_contacts`) mit SNR, RSSI, Knotentyp und Timestamp.
-     * **Automatische Aktualisierung:** Pending-Nodes werden im konfigurierten Intervall aktualisiert; eine vollständige Discovery erfolgt beim Öffnen und anschließend höchstens alle 30 Sekunden.
+     * **Automatische Aktualisierung:** Pending-Nodes und gespeicherte Kontakte werden im konfigurierten Intervall aktualisiert; eine vollständige Discovery erfolgt beim Öffnen und anschließend höchstens alle 30 Sekunden. Adverts werden durch die gemeinsame `meshcli`-Sitzung auch zwischen den Aktualisierungen erfasst.
      * **Übernahme in Kontakte (`[S]`):** Speichert einen gehörten Knoten direkt in das feste Adressbuch des MeshCore-Nodes (`add_pending` / `add_contact`).
      * Scan aktualisieren (`[R]`) und Liste leeren (`[F]`).
    * **Tab 2: 👥 Gespeicherte Kontakte:**
@@ -113,7 +113,7 @@ sudo apt install python3-venv python3-pip
 * **Chat, Verlaufsfokus**: `[↑/↓]` Nachricht auswählen, `[Entf/X]` einzelne lokale Nachricht löschen, `[L]` lokalen Raumverlauf leeren
 * **Kanalverwaltung `[8]`**: Kanal 1–7 auf dem Companion und seinen lokalen Verlauf löschen
 
-Das Refresh-Intervall wird in `~/.config/meshcore/tui_config.json` als `refresh_interval` gespeichert. Der Empfang erfolgt durch regelmäßiges `sync_msgs`-Polling, nicht durch eine dauerhaft belegte Push-Verbindung zum Companion.
+Das Refresh-Intervall wird in `~/.config/meshcore/tui_config.json` als `refresh_interval` gespeichert. Im Hardwarebetrieb verwendet der Client eine einzige dauerhaft laufende `meshcli`-Sitzung. Alle Befehle werden darin serialisiert; es gibt keine parallelen USB-Zugriffe. Neue Nachrichten werden weiterhin regelmäßig mit `sync_msgs` abgerufen, während Advert- und Nachrichtenereignisse zwischen den Befehlen automatisch zwischengespeichert werden. Noch nicht übernommene Ereignisse werden in `~/.config/meshcore/event_spool.json` gesichert und überstehen dadurch Timeouts, Prozessneustarts und das Beenden des Clients.
 
 ---
 

@@ -97,9 +97,14 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
             return None
         return result.value
 
-    def initial_load() -> Any:
+    def refresh_nodes(discover: bool = False) -> Any:
+        # The persistent CLI also keeps device-side contacts current when
+        # adverts are auto-added instead of entering the manual pending queue.
         store.fetch_saved_contacts(backend)
-        return store.fetch_heard_nodes(backend, discover=True)
+        return store.fetch_heard_nodes(backend, discover=discover)
+
+    def initial_load() -> Any:
+        return refresh_nodes(discover=True)
 
     stdscr.timeout(100)
     run_io("Kontakte laden", initial_load)
@@ -162,8 +167,8 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                         else None
                     )
                     if task.start(
-                        lambda discover=action == AUTO_DISCOVERY: store.fetch_heard_nodes(
-                            backend, discover=discover
+                        lambda discover=action == AUTO_DISCOVERY: refresh_nodes(
+                            discover=discover
                         )
                     ):
                         pending_auto = action
@@ -368,7 +373,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                     if 0 <= selected_heard_idx < len(current_list)
                     else None
                 )
-                result = run_io("Gehörte Nodes scannen", lambda: store.fetch_heard_nodes(backend, discover=True))
+                result = run_io("Gehörte Nodes scannen", lambda: refresh_nodes(discover=True))
                 if result is not None:
                     last_refresh = last_discovery = time.monotonic()
                     selected_heard_idx = stable_selection_index(

@@ -188,7 +188,7 @@ class ContactsAutoRefreshTests(unittest.TestCase):
         ):
             run_contacts_view(window, object(), config)
 
-        self.assertEqual(store.saved_calls, 1)
+        self.assertEqual(store.saved_calls, 2)
         self.assertEqual(store.discover_calls, [True, False])
         self.assertTrue(store.auto_completed.is_set())
         show_message.assert_not_called()

@@ -338,8 +338,13 @@ class ChatStore:
             if not isinstance(item, dict):
                 continue
 
+            message_type = str(item.get("type", "")).upper()
             text_value = item.get("text")
-            if text_value is None:
+            if text_value is None and message_type == "DATA":
+                data_type = item.get("data_type", "?")
+                payload = item.get("payload", "")
+                text_value = f"[DATA {data_type}] {payload}"
+            elif text_value is None:
                 text_value = item.get("msg", "")
             text = str(text_value)
             timestamp = item.get("sender_timestamp")
@@ -348,7 +353,6 @@ class ChatStore:
 
             sender_value = item.get("sender") or item.get("from")
             sender = str(sender_value).strip() if sender_value is not None else ""
-            message_type = str(item.get("type", "")).upper()
             pubkey_prefix = str(item.get("pubkey_prefix") or "").strip()
 
             if message_type == "CHAN" or (
@@ -404,6 +408,8 @@ class ChatStore:
                     "sender": sender,
                     "timestamp": timestamp,
                     "text": text,
+                    "data_type": item.get("data_type"),
+                    "payload": item.get("payload"),
                 },
                 ensure_ascii=False,
                 sort_keys=True,

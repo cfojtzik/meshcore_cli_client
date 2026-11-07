@@ -40,7 +40,10 @@ class MeshCoreTUIApp:
         self.menu_offset = 0
 
     def run(self) -> None:
-        curses.wrapper(self._main_loop)
+        try:
+            curses.wrapper(self._main_loop)
+        finally:
+            self.backend.close()
 
     def _main_loop(self, stdscr: curses.window) -> None:
         safe_curs_set(0)

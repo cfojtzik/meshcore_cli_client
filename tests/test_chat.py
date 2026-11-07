@@ -452,6 +452,34 @@ class TestChatStore(unittest.TestCase):
         self.assertEqual([(m.sender, m.text) for m in direct], [("Legacy DM", "Legacy private")])
         self.assertNotIn("Legacy private", [message.text for message in public])
 
+    def test_sync_preserves_distinct_real_data_payloads(self):
+        payload = [
+            {
+                "type": "DATA",
+                "channel_idx": 0,
+                "data_type": 1,
+                "data_len": 2,
+                "payload": "0102",
+                "sender_timestamp": 1234,
+            },
+            {
+                "type": "DATA",
+                "channel_idx": 0,
+                "data_type": 1,
+                "data_len": 2,
+                "payload": "0304",
+                "sender_timestamp": 1234,
+            },
+        ]
+        self.backend.respond(["sync_msgs"], (True, json.dumps(payload)))
+
+        self.assertEqual(self.chat_store.sync_from_backend(self.backend), 2)
+        history = self.chat_store.get_history("chan_0")
+        self.assertEqual(
+            [message.text for message in history],
+            ["[DATA 1] 0102", "[DATA 1] 0304"],
+        )
+
     def test_malformed_json_does_not_trigger_second_destructive_sync(self):
         valid_second_response = json.dumps(
             [{"type": "PRIV", "pubkey_prefix": "abc123", "text": "Consumed"}]

@@ -243,7 +243,7 @@ class TestCLIExecution(unittest.TestCase):
     def _make_backend(port="/dev/ttyMock0"):
         cfg = Config(config_file=None)
         cfg.port = port
-        return MeshCoreBackend(cfg)
+        return MeshCoreBackend(cfg, persistent=False)
 
     @patch("src.backend.executor.subprocess.run")
     def test_zero_exit_application_errors(self, mock_run):

@@ -7,11 +7,18 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 import serial.tools.list_ports
 
 from ..config import Config
+from .persistent_cli import (
+    EventBuffer,
+    PersistentCLIError,
+    PersistentCLITimeout,
+    PersistentMeshCLI,
+)
 from .mock_data import (
     MOCK_CHANNELS,
     MOCK_CONTACTS,
@@ -40,9 +47,17 @@ class MeshCoreBackend:
         r"^\s*(?:\[[^\]\n]+\]\s*)?no\s+such\s+file\s+or\s+directory\b",
     ))
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, persistent: bool = True) -> None:
         self.config = config
         self._meshcli_bin = self._find_meshcli()
+        self._persistent_enabled = persistent
+        self._session: Optional[PersistentMeshCLI] = None
+        self._session_key: Optional[Tuple[str, int, str]] = None
+        self._session_lock = threading.RLock()
+        self._event_buffer: Optional[EventBuffer] = None
+        self._event_spool_path = (
+            config.config_file.parent / "event_spool.json" if config.config_file else None
+        )
         # Working copies for interactive simulation state
         self._sim_contacts = [dict(c) for c in MOCK_CONTACTS]
         self._sim_heard = [dict(h) for h in MOCK_HEARD_NODES]
@@ -128,26 +143,20 @@ class MeshCoreBackend:
                 return True
         return False
 
-    def run_cli(self, args: List[str], json_mode: bool = False, timeout: Optional[int] = None) -> Tuple[bool, str]:
-        """
-        Execute meshcli with connection options and commands.
-        Does not alter meshcore-cli in any way.
-        """
-        if self.config.simulation_mode:
-            return self._handle_simulation(args)
-
-        t_out = timeout or self.config.timeout
+    def _run_cli_once(
+        self, args: List[str], json_mode: bool, timeout: int
+    ) -> Tuple[bool, str]:
+        """Legacy one-shot execution for help output and isolated tests."""
         cmd = [self._meshcli_bin, "-s", self.config.port, "-b", str(self.config.baudrate)]
         if json_mode:
             cmd.append("-j")
         cmd.extend(args)
-
         try:
             res = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=t_out,
+                timeout=timeout,
             )
             output = (res.stdout or "").strip()
             err_output = (res.stderr or "").strip()
@@ -159,11 +168,91 @@ class MeshCoreBackend:
                 return False, combined or "meshcli meldete einen Anwendungsfehler."
             return True, output if output else "Befehl erfolgreich ausgeführt (keine Ausgabe)."
         except subprocess.TimeoutExpired:
-            return False, f"Zeitüberschreitung ({t_out}s) beim Warten auf Companion an {self.config.port}."
+            return False, f"Zeitüberschreitung ({timeout}s) beim Warten auf Companion an {self.config.port}."
         except FileNotFoundError:
             return False, f"meshcli Binärdatei '{self._meshcli_bin}' nicht gefunden. Bitte 'pip install meshcore-cli' ausführen."
         except Exception as e:
             return False, f"Unerwarteter Fehler: {e}"
+
+    def _close_session_locked(self) -> None:
+        if self._session is not None:
+            self._session.close()
+        self._session = None
+        self._session_key = None
+
+    def close(self) -> None:
+        """Release the companion connection when the application exits."""
+        with self._session_lock:
+            self._close_session_locked()
+
+    def _run_persistent(
+        self, args: List[str], json_mode: bool, timeout: int
+    ) -> Tuple[bool, str]:
+        """Run a command in the single event-retaining meshcli session."""
+        with self._session_lock:
+            key = (self.config.port, self.config.baudrate, self._meshcli_bin)
+            if self._session_key != key:
+                self._close_session_locked()
+            try:
+                if self._session is None:
+                    if self._event_buffer is None:
+                        self._event_buffer = EventBuffer(self._event_spool_path)
+                    env = os.environ.copy()
+                    env.setdefault("TERM", "dumb")
+                    command = [
+                        self._meshcli_bin,
+                        "-C",
+                        "-c",
+                        "off",
+                        "-j",
+                        "-s",
+                        self.config.port,
+                        "-b",
+                        str(self.config.baudrate),
+                        "-i",
+                        # Consume the pre-interactive queue as JSON. The second,
+                        # automatic interactive sync then normally returns [].
+                        ".sync_msgs",
+                    ]
+                    session = PersistentMeshCLI(
+                        command, env=env, events=self._event_buffer
+                    )
+                    session.start(timeout=max(20, timeout))
+                    self._session = session
+                    self._session_key = key
+
+                output = self._session.execute(args, json_mode, timeout)
+                if self._cli_output_has_error(output, ""):
+                    return False, output or "meshcli meldete einen Anwendungsfehler."
+                output = self._session.process_success(args, json_mode, output)
+                return True, output or "Befehl erfolgreich ausgeführt (keine Ausgabe)."
+            except PersistentCLITimeout as exc:
+                self._close_session_locked()
+                return False, f"{exc} Port: {self.config.port}."
+            except PersistentCLIError as exc:
+                self._close_session_locked()
+                return False, f"Gemeinsame meshcli-Sitzung fehlgeschlagen: {exc}"
+            except FileNotFoundError:
+                self._close_session_locked()
+                return False, f"meshcli Binärdatei '{self._meshcli_bin}' nicht gefunden. Bitte 'pip install meshcore-cli' ausführen."
+            except Exception as exc:
+                self._close_session_locked()
+                return False, f"Unerwarteter Fehler in der meshcli-Sitzung: {exc}"
+
+    def run_cli(self, args: List[str], json_mode: bool = False, timeout: Optional[int] = None) -> Tuple[bool, str]:
+        """Execute meshcli without modifying it or sharing the serial port twice."""
+        if self.config.simulation_mode:
+            with self._session_lock:
+                self._close_session_locked()
+            return self._handle_simulation(args)
+
+        t_out = timeout or self.config.timeout
+        # Help is local CLI output and never needs to own the companion.
+        if args and args[0] in ("-h", "--help"):
+            return self._run_cli_once(args, json_mode, t_out)
+        if not self._persistent_enabled:
+            return self._run_cli_once(args, json_mode, t_out)
+        return self._run_persistent(args, json_mode, t_out)
 
     def _find_sim_contact(self, target: str) -> Optional[Dict[str, Any]]:
         normalized = target.strip().casefold()
