@@ -24,7 +24,8 @@ def contact_record(key_hex, name, node_type=2, last_advert=None):
 
 
 class FakeCompanion:
-    def __init__(self, saved_contacts=(), manual_add=True):
+    def __init__(self, saved_contacts=(), manual_add=True, node_name="FakeNode"):
+        self.node_name = node_name
         import socket
         self._server = socket.socket()
         self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -37,6 +38,8 @@ class FakeCompanion:
         self.saved = dict(saved_contacts)  # key -> name
         self.manual_add = manual_add
         self.commands = []
+        # Every SET_FLOOD_SCOPE as "default", "*" or the 16-byte key in hex.
+        self.scope_history = []
         self._lock = threading.Lock()
         self._closed = False
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -50,6 +53,11 @@ class FakeCompanion:
             except OSError:
                 pass
 
+    @property
+    def current_scope(self):
+        """Flood scope the device would use for the next flood packet."""
+        return self.scope_history[-1] if self.scope_history else "default"
+
     def push_advert(self, key_hex):
         """Known contact heard again: PUSH_CODE_ADVERT (0x80)."""
         self._send(b"\x80" + bytes.fromhex(key_hex))
@@ -61,11 +69,19 @@ class FakeCompanion:
     def _handle(self, payload):
         cmd = payload[0]
         self.commands.append(cmd)
+        if cmd == 54:  # SET_FLOOD_SCOPE
+            if payload[1:2] == b"\x01":
+                self.scope_history.append("*")
+            elif payload[2:18].strip(b"\0"):
+                self.scope_history.append(payload[2:18].hex())
+            else:
+                self.scope_history.append("default")
         if cmd == 1:  # APP_START -> SELF_INFO
             self._send(
                 b"\x05" + bytes([1, 20, 22]) + bytes.fromhex("11" * 32)
                 + struct.pack("<ii", 0, 0) + bytes([0, 0, 0, 1 if self.manual_add else 0])
-                + struct.pack("<II", 869525, 250000) + bytes([11, 5]) + b"FakeNode"
+                + struct.pack("<II", 869525, 250000) + bytes([11, 5])
+                + self.node_name.encode("utf-8")
             )
         elif cmd == 22:  # DEVICE_QUERY -> DEVICE_INFO
             self._send(
@@ -93,10 +109,22 @@ class FakeCompanion:
             self._send(b"\x00")
 
     def _run(self):
-        conn, _ = self._server.accept()
-        self._conn = conn
-        self.master = conn.fileno()
-        self._connected.set()
+        # Accept successive connections, e.g. after a meshcli session restart.
+        while not self._closed:
+            try:
+                conn, _ = self._server.accept()
+            except OSError:
+                return
+            self._conn = conn
+            self.master = conn.fileno()
+            self._connected.set()
+            self._serve()
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def _serve(self):
         buffer = b""
         while not self._closed:
             try:

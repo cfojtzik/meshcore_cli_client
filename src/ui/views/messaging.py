@@ -30,11 +30,31 @@ def _channel_target(store: ChatStore, channel_num: int) -> ChatTarget:
     return store.get_or_create_target(name, True, channel_num)
 
 
+def scope_label(scope: str) -> str:
+    """Human-readable flood scope; "" is the companion's default scope."""
+    if not scope:
+        return "Standard des Companions"
+    if scope == "*":
+        return "* (ohne Scope)"
+    return scope
+
+
 def run_messaging_view(stdscr: curses.window, backend: MeshCoreBackend, config: Config) -> None:
     """Messaging menu; sends and syncs exclusively through ``ChatStore``."""
     message_log: list = []
     chat_store = ChatStore()
     task = BackgroundTask()
+
+    def current_scope() -> str:
+        return str(getattr(backend, "flood_scope", "") or "")
+
+    def unread_hint() -> str:
+        unread = chat_store.unread_targets()
+        if not unread:
+            return ""
+        total = sum(count for _, count in unread)
+        chats = ", ".join(target.display_tag for target, _ in unread)
+        return f" – {total} ungelesen: {chats}"
 
     def run_io(title: str, func: Callable[[], Any]) -> Optional[Any]:
         result = run_with_progress(stdscr, task, title, func)
@@ -56,14 +76,14 @@ def run_messaging_view(stdscr: curses.window, backend: MeshCoreBackend, config: 
             view_h = max(0, max_y - 3)
             draw_box(stdscr, 1, 0, view_h, max_x, "Kanal- und Scope-Zentrum")
             options = [
-                ("0", "💬 Interaktives Chatfenster öffnen (Live-Chat & Verlauf)", "ChatStore"),
+                ("0", "💬 Interaktives Chatfenster öffnen (Live-Chat & Verlauf)" + unread_hint(), "ChatStore"),
                 ("1", "Öffentliche Nachricht senden (Kanal 0 Broadcast)", "public <text>"),
                 ("2", "Direktnachricht an Kontakt senden", "msg <kontakt> <text>"),
                 ("3/c", "Nachricht an bestimmten Kanal senden (0-7)", "chan <nummer> <text>"),
                 ("4", "Neue Nachrichten vom Node synchronisieren", "ChatStore.sync_from_backend"),
                 ("5", "Konfigurierte Kanäle anzeigen", "get_channels"),
                 ("6", "Kanal konfigurieren (Nummer, Name, Schlüssel)", "set_channel <nr> <name> [key]"),
-                ("7", "Flood-Scope konfigurieren", "scope <region>"),
+                ("7", f"Flood-Scope konfigurieren (aktuell: {scope_label(current_scope())})", "scope <region>"),
                 ("8", "Kanal löschen (Companion + lokaler Verlauf)", "remove_channel <nr>"),
             ]
             safe_addstr(stdscr, 3, 3, "Wähle eine Aktion aus:", get_color(COLOR_HEADER) | curses.A_BOLD)
@@ -162,13 +182,22 @@ def run_messaging_view(stdscr: curses.window, backend: MeshCoreBackend, config: 
                 scope = prompt_input(
                     stdscr,
                     "Flood Scope",
-                    "Scope Region (z.B. 0 für Standard, * für Unscoped, oder #Region):",
-                    default="0",
+                    "Region (z.B. #de-bw), 0 = Standard, * = ohne Scope:",
+                    default=current_scope() or "0",
                 )
                 if scope:
+                    scope = scope.strip()
                     result = run_io("Flood Scope", lambda: backend.run_cli(["scope", scope]))
                     if result is not None:
                         ok, res = result
+                        if ok:
+                            res = (
+                                f"Flood-Scope: {scope_label(current_scope())}\n\n"
+                                "Nachrichten und Flood-Pakete werden ab jetzt mit diesem "
+                                "Scope gesendet. Die Einstellung bleibt auch nach einem "
+                                "Neustart des Clients erhalten."
+                            )
+                        message_log.append(f"Flood-Scope: {scope_label(current_scope())}")
                         show_message(stdscr, "Flood Scope", res, is_error=not ok)
             elif ch == ord("8"):
                 ch_num_text = prompt_input(stdscr, "Kanal löschen", "Kanalnummer (1-7):", default="1")

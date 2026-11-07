@@ -8,6 +8,7 @@ arrive between commands. No third-party terminal wrapper is required.
 import codecs
 from collections import deque
 from dataclasses import dataclass, field
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,9 @@ import pty
 import re
 import select
 import shlex
+import struct
 import subprocess
+import termios
 import threading
 import time
 import uuid
@@ -38,6 +41,29 @@ _MESSAGE_COMMANDS = {
     "wmt8",
     "]",
 }
+
+
+# Virtual terminal size of the meshcli session: wide enough that no prompt plus
+# command (names, scopes, long message texts) is ever wrapped.
+_PTY_COLUMNS = 4000
+_PTY_ROWS = 50
+
+_DEFAULT_SCOPE_VALUES = {"", "0", "none", "clear"}
+
+
+def normalize_scope(value: Any) -> str:
+    """Return the flood scope as meshcli stores it; "" means device default."""
+    scope = str(value or "").strip()
+    return "" if scope.casefold() in _DEFAULT_SCOPE_VALUES else scope
+
+
+def scope_line(scope: str) -> str:
+    """Interactive (non-$$) scope line which also updates meshcli's loop scope.
+
+    The interactive loop re-applies its own scope variable before every input
+    line, so a raw '$$scope X' alone is reverted by the very next command.
+    """
+    return f"scope {normalize_scope(scope) or '0'}"
 
 
 class PersistentCLIError(RuntimeError):
@@ -267,9 +293,12 @@ class PersistentMeshCLI:
         command: List[str],
         env: Optional[Dict[str, str]] = None,
         events: Optional[EventBuffer] = None,
+        scope: str = "",
     ) -> None:
         self._command = list(command)
         self._env = env
+        # Flood scope re-applied at start; meshcli begins with the default.
+        self._scope = normalize_scope(scope)
         self._events = events or EventBuffer()
         # Stable aliases retained for diagnostics and backwards-compatible tests.
         self._pending_contacts = self._events.pending_contacts
@@ -482,6 +511,14 @@ class PersistentMeshCLI:
             return
         master_fd, slave_fd = pty.openpty()
         try:
+            # prompt_toolkit wraps input echoes at the terminal width. With a
+            # long prompt (node name + flood scope) or command, fragments of
+            # the wrapped echo would otherwise leak into command output.
+            fcntl.ioctl(
+                slave_fd,
+                termios.TIOCSWINSZ,
+                struct.pack("HHHH", _PTY_ROWS, _PTY_COLUMNS, 0, 0),
+            )
             self._process = subprocess.Popen(
                 self._command,
                 stdin=slave_fd,
@@ -507,6 +544,8 @@ class PersistentMeshCLI:
             self._write_line("$$set print_new_contacts on")
             self._write_line("$$set print_adverts on")
             self._write_line("$$set json_msgs on")
+            if self._scope:
+                self._write_line(scope_line(self._scope))
             self._write_line(f"$$echo {self._ready_marker}")
             deadline = time.monotonic() + timeout
             with self._condition:
@@ -547,10 +586,15 @@ class PersistentMeshCLI:
                 json_mode=json_mode,
                 marker=f"__MESHCORE_DONE_{uuid.uuid4().hex}__",
             )
+            is_scope = self._command_name(command_args) == "scope" and len(command_args) > 1
             with self._condition:
                 self._active = command
             try:
+                # The raw command reports errors such as an unsupported scope.
                 self._write_line("$$" + shlex.join(command_args))
+                if is_scope:
+                    # Keep the interactive loop from reverting the new scope.
+                    self._write_line(scope_line(command_args[1]))
                 self._write_line(f"$$echo {command.marker}")
                 deadline = time.monotonic() + timeout
                 with self._condition:

@@ -341,6 +341,27 @@ class ChatViewTests(unittest.TestCase):
         self.assertEqual(window.timeouts[-1], -1)
         self.assertIn("ä", "".join(write[2] for write in window.writes))
 
+    def test_unread_chats_are_marked_and_open_chat_counts_as_read(self):
+        config = Config(config_file=None)
+        config.simulation_mode = True
+        backend = Mock()
+        backend.run_cli.return_value = (True, "")
+        store = ChatStore(storage_path=None)
+        active, other = store.targets[0], store.get_or_create_target("#stuttgart", True, 3)
+        for target in (active, other):
+            store._add_received_message(target, "CF T-Deck", "Hallo", 1, dedup_key=target.id)
+            store._add_received_message(target, "CF T-Deck", "Noch da?", 2, dedup_key=target.id + "2")
+        window = FakeWindow(height=14, width=110, keys=[None, 27, ord("y")])
+
+        with patch("src.ui.views.chat_view.BackgroundTask", ImmediateBackgroundTask):
+            run_chat_view(window, backend, config, chat_store=store)
+
+        rendered = "".join(write[2] for write in window.writes)
+        self.assertEqual(store.unread_count(active.id), 0)  # Shown, hence read.
+        self.assertEqual(store.unread_count(other.id), 2)
+        self.assertIn("[+2]", rendered)
+        self.assertIn("Neu: #stuttgart +2", rendered)
+
     def test_auto_sync_runs_after_idle_interval_without_error_popup(self):
         config = Config(config_file=None)
         config.simulation_mode = True

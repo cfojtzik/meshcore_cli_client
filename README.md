@@ -36,11 +36,13 @@ Ein ressourcenschonender, menügesteuerter Terminal-Client für **MeshCore**, op
    * Tastaturbedienung: `[Tab]` zum Wechseln zwischen Räumen, Verlauf und Eingabezeile; `[R]` zum sofortigen Synchronisieren; `[N]` für neuen Chat
    * **Automatischer Nachrichtenempfang:** Neue Nachrichten werden standardmäßig alle 5 Sekunden im Hintergrund abgerufen, ohne die Eingabe zu blockieren
    * **Lokale Nachrichtenverwaltung:** Im Verlaufsfokus mit `[↑/↓]` eine Nachricht auswählen, `[Entf/X]` löscht nur diese Nachricht und `[L]` den kompletten lokalen Raumverlauf. In der Raumliste entfernt `[Entf/X]` den ausgewählten Chat samt komplettem lokalem Verlauf; Kontakt oder Kanal auf dem Companion bleiben unverändert.
+   * **Ungelesene Nachrichten:** Chats mit neuen Nachrichten sind in der Raumliste hervorgehoben und zeigen `[+N]`; die Statuszeile nennt sie (z. B. `Neu: ##stuttgart (3) +1`) und das Nachrichtenmenü die Gesamtzahl. Ein Chat gilt als gelesen, sobald er angezeigt wird. Die Zähler bleiben über Neustarts erhalten.
+   * **Absender in Kanälen:** Der Absendername wird aus Kanalnachrichten (`Name: Text`) übernommen, auch für bereits gespeicherte ältere Nachrichten.
    * Persistenter Speicher: Chatverläufe bleiben in `chat_history.json` lokal gespeichert
 4. **📻 Kanal- & Scope-Verwaltung:**
    * Anzeige und Einrichtung von Kanälen 1–7 (`get_channels`, `set_channel`)
    * Kanäle 1–7 mit `[8]` löschen (`remove_channel`); entfernt nach Bestätigung auch den lokalen Kanalverlauf
-   * Flood-Scope Konfiguration (`scope`)
+   * Flood-Scope Konfiguration (`scope`, `[7]`): Region wie `#de-bw`, `0` für den Standard-Scope des Companions oder `*` für Pakete ohne Scope. Der gewählte Scope wird angezeigt, in der Konfiguration gespeichert und nach jedem Neustart der `meshcli`-Sitzung oder des Clients automatisch wieder gesetzt.
 5. **👥 Gehörte Nodes & Kontaktliste (Dual-Tab Ansicht):**
    * **Tab 1: 📡 Gehörte Nodes:**
      * Interaktive Liste aller über Funk empfangener Knoten (`node_discover`, `pending_contacts`) mit SNR, RSSI, Knotentyp und Timestamp.

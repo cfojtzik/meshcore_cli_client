@@ -244,7 +244,14 @@ def run_chat_view(
                 targets = [chat_store.get_or_create_target("Public (0)", True, 0)]
             active_target_idx = max(0, min(active_target_idx, len(targets) - 1))
             active_target = targets[active_target_idx]
+            # The open chat is visible, so its new messages count as read.
+            chat_store.mark_read(active_target.id)
             history = list(chat_store.get_history(active_target.id))
+            unread_elsewhere = [
+                (target, count)
+                for target, count in chat_store.unread_targets()
+                if target.id != active_target.id
+            ]
 
             if history_target_id != active_target.id:
                 history_target_id = active_target.id
@@ -288,6 +295,11 @@ def run_chat_view(
                 status_right = f"Nachricht {selected_message_idx + 1}/{len(history)}"
             else:
                 status_right = f"Nachrichten: {len(history)}"
+            if unread_elsewhere:
+                summary = ", ".join(
+                    f"{target.display_tag} +{count}" for target, count in unread_elsewhere
+                )
+                status_right = f"Neu: {summary} | {status_right}"
             draw_status_bar(stdscr, status_left, status_right)
 
             draw_box(stdscr, 1, 0, main_h, sidebar_w, "Kanäle & Kontakte")
@@ -302,17 +314,28 @@ def run_chat_view(
                 prefix = "▶ " if is_active else "  "
                 tag = "#" if target.is_channel else "@"
                 label = f"{prefix}{tag}{target.name}"
+                unread = chat_store.unread_count(target.id)
                 count = len(chat_store.get_history(target.id))
-                badge = f"[{count}]" if count else ""
+                # Unread messages replace the total count and stand out.
+                badge = f"[+{unread}]" if unread else (f"[{count}]" if count else "")
                 avail_w = max(0, sidebar_w - 4 - len(badge))
-                disp_text = label[:avail_w].ljust(avail_w) + badge
+                disp_text = label[:avail_w].ljust(avail_w)
                 if is_highlighted:
                     attr = get_color(COLOR_SELECTED) | curses.A_BOLD | curses.A_REVERSE
                 elif is_active:
                     attr = get_color(COLOR_HEADER) | curses.A_BOLD
+                elif unread:
+                    attr = get_color(COLOR_SUCCESS) | curses.A_BOLD
                 else:
                     attr = get_color(COLOR_NORMAL)
                 safe_addstr(stdscr, item_y, 1, disp_text, attr)
+                if badge:
+                    badge_attr = (
+                        get_color(COLOR_SUCCESS) | curses.A_BOLD | curses.A_REVERSE
+                        if unread and not is_highlighted
+                        else attr
+                    )
+                    safe_addstr(stdscr, item_y, 1 + len(disp_text), badge, badge_attr)
 
             draw_box(stdscr, 1, chat_x, main_h, chat_w, f"Chatverlauf: {active_target.display_tag}")
             chat_inner_h = max(0, main_h - 2)

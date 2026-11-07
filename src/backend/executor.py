@@ -18,6 +18,7 @@ from .persistent_cli import (
     PersistentCLIError,
     PersistentCLITimeout,
     PersistentMeshCLI,
+    normalize_scope,
 )
 from .mock_data import (
     MOCK_CHANNELS,
@@ -231,7 +232,11 @@ class MeshCoreBackend:
                         ".sync_msgs",
                     ]
                     session = PersistentMeshCLI(
-                        command, env=env, events=self._event_buffer
+                        command,
+                        env=env,
+                        events=self._event_buffer,
+                        # Re-apply the chosen region after every (re)start.
+                        scope=getattr(self.config, "flood_scope", ""),
                     )
                     session.start(timeout=max(20, timeout))
                     self._session = session
@@ -239,6 +244,9 @@ class MeshCoreBackend:
 
                 output = self._session.execute(args, json_mode, timeout)
                 if self._cli_output_has_error(output, ""):
+                    if self._scope_argument(args) is not None:
+                        # meshcli's own scope state may now be inconsistent.
+                        self._close_session_locked()
                     return False, output or "meshcli meldete einen Anwendungsfehler."
                 output = self._session.process_success(args, json_mode, output)
                 return True, output or "Befehl erfolgreich ausgeführt (keine Ausgabe)."
@@ -257,10 +265,17 @@ class MeshCoreBackend:
 
     def run_cli(self, args: List[str], json_mode: bool = False, timeout: Optional[int] = None) -> Tuple[bool, str]:
         """Execute meshcli without modifying it or sharing the serial port twice."""
+        scope = self._scope_argument(args)
+        if scope is not None and (not scope or any(ch.isspace() for ch in scope)):
+            return False, "Error: Ungültiger Scope – bitte einen Regionsnamen ohne Leerzeichen angeben (0 = Standard, * = ohne Scope)."
+
         if self.config.simulation_mode:
             with self._session_lock:
                 self._close_session_locked()
-            return self._handle_simulation(args)
+            ok, output = self._handle_simulation(args)
+            if ok and scope is not None:
+                self._remember_scope(scope)
+            return ok, output
 
         t_out = timeout or self.config.timeout
         # Help is local CLI output and never needs to own the companion.
@@ -268,7 +283,29 @@ class MeshCoreBackend:
             return self._run_cli_once(args, json_mode, t_out)
         if not self._persistent_enabled:
             return self._run_cli_once(args, json_mode, t_out)
-        return self._run_persistent(args, json_mode, t_out)
+        ok, output = self._run_persistent(args, json_mode, t_out)
+        if ok and scope is not None:
+            self._remember_scope(scope)
+        return ok, output
+
+    @staticmethod
+    def _scope_argument(args: List[str]) -> Optional[str]:
+        """Return the region of a 'scope <region>' command, else None."""
+        if len(args) >= 2 and args[0].lstrip(".").casefold() == "scope":
+            return " ".join(args[1:]).strip()
+        return None
+
+    def _remember_scope(self, scope: str) -> None:
+        """Persist the region so a restarted session sends with it again."""
+        try:
+            self.config.flood_scope = normalize_scope(scope)
+        except AttributeError:
+            pass  # Minimal config doubles without a flood_scope setting.
+
+    @property
+    def flood_scope(self) -> str:
+        """Currently selected flood scope; "" means the device default."""
+        return normalize_scope(getattr(self.config, "flood_scope", ""))
 
     def _find_sim_contact(self, target: str) -> Optional[Dict[str, Any]]:
         normalized = target.strip().casefold()

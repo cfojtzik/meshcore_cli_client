@@ -22,6 +22,19 @@ _TEXT_MESSAGE_RE = re.compile(
     r"(?P<sender>[^:\r\n]+?):\s*(?P<text>.*)$"
 )
 _CHANNEL_TAG_NUM_RE = re.compile(r"\(([-+]?\d+)\)\s*$")
+# MeshCore channel texts are "<sender name>: <message>" (names max. 32 bytes).
+_CHANNEL_SENDER_RE = re.compile(r"^(?P<sender>[^\r\n]{1,32}?): (?P<text>.*)$", re.DOTALL)
+_UNKNOWN_SENDERS = {"", "unknown"}
+
+
+def split_channel_sender(sender: str, text: str) -> Tuple[str, str]:
+    """Move the sender name out of a channel text when it is not known yet."""
+    if str(sender or "").strip().casefold() not in _UNKNOWN_SENDERS:
+        return sender, text
+    match = _CHANNEL_SENDER_RE.match(text or "")
+    if match is None or not match.group("sender").strip():
+        return sender, text
+    return match.group("sender").strip(), match.group("text")
 
 
 @dataclass
@@ -70,6 +83,8 @@ class ChatStore:
         self._loading = False
         # Map target_id -> List[ChatMessage]
         self.history: Dict[str, List[ChatMessage]] = {}
+        # Map target_id -> number of received messages not yet viewed.
+        self.unread: Dict[str, int] = {}
         # Transient public-key mapping used to resolve real PRIV payloads.
         self._contact_names_by_key: Dict[str, str] = {}
         # List of available targets
@@ -185,6 +200,7 @@ class ChatStore:
         """Clear all local messages for a target without removing the target."""
         with self._lock:
             self.history.setdefault(target_id, []).clear()
+            self.unread.pop(target_id, None)
             self.save()
 
     def delete_conversation(self, target_id: str) -> bool:
@@ -196,6 +212,7 @@ class ChatStore:
                 target for target in self.targets if target.id != target_id
             ]
             self.history.pop(target_id, None)
+            self.unread.pop(target_id, None)
             self.save()
             return True
 
@@ -283,6 +300,7 @@ class ChatStore:
                 existing for existing in self.targets if existing.id != target.id
             ]
             self.history.pop(target.id, None)
+            self.unread.pop(target.id, None)
             self.save()
         return True, res
 
@@ -315,8 +333,42 @@ class ChatStore:
         )
         with self._lock:
             before_len = len(self.get_history(target.id))
+            # Count first so add_message persists history and counter together.
+            self.unread[target.id] = self.unread.get(target.id, 0) + 1
             self.add_message(target.id, message)
-            return int(len(self.get_history(target.id)) > before_len)
+            added = len(self.get_history(target.id)) > before_len
+            if not added:  # Duplicate: nothing new to read, nothing was saved.
+                self._decrement_unread(target.id)
+            return int(added)
+
+    def _decrement_unread(self, target_id: str) -> None:
+        remaining = self.unread.get(target_id, 0) - 1
+        if remaining > 0:
+            self.unread[target_id] = remaining
+        else:
+            self.unread.pop(target_id, None)
+
+    def unread_count(self, target_id: str) -> int:
+        """Received messages in a chat which have not been viewed yet."""
+        with self._lock:
+            return self.unread.get(target_id, 0)
+
+    def unread_targets(self) -> List[Tuple[ChatTarget, int]]:
+        """Chats with unread messages, in chat-list order."""
+        with self._lock:
+            return [
+                (target, self.unread[target.id])
+                for target in self.targets
+                if self.unread.get(target.id, 0) > 0
+            ]
+
+    def mark_read(self, target_id: str) -> bool:
+        """Mark a chat as read; returns whether anything was unread."""
+        with self._lock:
+            if not self.unread.pop(target_id, 0):
+                return False
+            self.save()
+            return True
 
     def _remember_contact(self, name: str, key: Any) -> None:
         key_text = str(key or "").strip().casefold()
@@ -415,6 +467,10 @@ class ChatStore:
                 sort_keys=True,
                 default=str,
             )
+            # Split only after building the key, so identities of messages
+            # stored by older versions stay identical.
+            if target.is_channel and message_type != "DATA":
+                sender, text = split_channel_sender(sender, text)
             new_count += self._add_received_message(
                 target, sender, text, timestamp, dedup_key=dedup_key
             )
@@ -694,6 +750,24 @@ class ChatStore:
                                 for m in msgs
                                 if isinstance(m, dict)
                             ]
+
+                    # Older versions stored channel messages as sender
+                    # "Unknown" with the name inside the text.
+                    channel_ids = {t.id for t in self.targets if t.is_channel}
+                    for t_id in channel_ids:
+                        for message in self.history.get(t_id, []):
+                            if not message.is_outgoing:
+                                message.sender, message.text = split_channel_sender(
+                                    message.sender, message.text
+                                )
+
+                    raw_unread = data.get("unread", {})
+                    if isinstance(raw_unread, dict):
+                        self.unread = {
+                            str(t_id): count
+                            for t_id, count in raw_unread.items()
+                            if type(count) is int and count > 0
+                        }
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 pass
             finally:
@@ -723,7 +797,11 @@ class ChatStore:
                 ]
                 with open(self.storage_path, "w", encoding="utf-8") as f:
                     json.dump(
-                        {"targets": serializable_targets, "history": serializable_history},
+                        {
+                            "targets": serializable_targets,
+                            "history": serializable_history,
+                            "unread": dict(self.unread),
+                        },
                         f,
                         indent=2,
                     )

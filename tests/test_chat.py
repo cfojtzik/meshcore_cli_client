@@ -46,6 +46,78 @@ class TestChatStore(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
+    def _sync(self, *items):
+        self.backend.respond(["sync_msgs"], (True, json.dumps(list(items))))
+        return self.chat_store.sync_from_backend(self.backend)
+
+    @staticmethod
+    def _chan(text, channel_idx=3, timestamp=1794070147):
+        return {
+            "type": "CHAN",
+            "channel_idx": channel_idx,
+            "sender_timestamp": timestamp,
+            "text": text,
+        }
+
+    def test_channel_sender_is_split_from_firmware_text(self):
+        self.assertEqual(self._sync(self._chan("CF T-Deck: kam das an?")), 1)
+        target = self.chat_store.get_or_create_target("Kanal 3", True, 3)
+        message = self.chat_store.get_history(target.id)[-1]
+        self.assertEqual((message.sender, message.text), ("CF T-Deck", "kam das an?"))
+        # The identity stays the pre-split one, so re-delivery is no duplicate.
+        self.assertIn('"sender": "Unknown"', message.dedup_key)
+        self.assertEqual(self._sync(self._chan("CF T-Deck: kam das an?")), 0)
+
+        # Names with separators, colons later in the text, and texts without
+        # a sender prefix.
+        self._sync(self._chan("DE|BW|LB CF-USB: Zeit: 18:00", timestamp=2))
+        self._sync(self._chan("ohne Absender", timestamp=3))
+        history = self.chat_store.get_history(target.id)
+        self.assertEqual((history[-2].sender, history[-2].text), ("DE|BW|LB CF-USB", "Zeit: 18:00"))
+        self.assertEqual((history[-1].sender, history[-1].text), ("Unknown", "ohne Absender"))
+
+    def test_direct_messages_are_not_split(self):
+        self._sync({"type": "PRIV", "pubkey_prefix": "abcdef", "sender_timestamp": 5, "text": "Hinweis: Test"})
+        target = self.chat_store.get_or_create_target("abcdef", False)
+        message = self.chat_store.get_history(target.id)[-1]
+        self.assertEqual((message.sender, message.text), ("abcdef", "Hinweis: Test"))
+
+    def test_legacy_channel_messages_are_split_on_load(self):
+        legacy = {
+            "targets": [{"id": "chan_3", "name": "#stuttgart (3)", "is_channel": True, "channel_num": 3}],
+            "history": {
+                "chan_3": [
+                    {"sender": "Unknown", "text": "CF T-Deck: alt", "timestamp": "17:00"},
+                    {"sender": "Ich", "text": "Gruß: an alle", "timestamp": "17:01", "is_outgoing": True},
+                ]
+            },
+        }
+        self.storage_file.write_text(json.dumps(legacy), encoding="utf-8")
+        history = ChatStore(storage_path=self.storage_file).get_history("chan_3")
+        self.assertEqual((history[0].sender, history[0].text), ("CF T-Deck", "alt"))
+        self.assertEqual((history[1].sender, history[1].text), ("Ich", "Gruß: an alle"))
+
+    def test_unread_counts_are_tracked_persisted_and_cleared(self):
+        self._sync(self._chan("A: eins", timestamp=1), self._chan("B: zwei", timestamp=2))
+        self._sync(self._chan("A: eins", timestamp=1))  # Duplicate is not unread.
+        target = self.chat_store.get_or_create_target("Kanal 3", True, 3)
+        self.assertEqual(self.chat_store.unread_count(target.id), 2)
+        self.assertEqual(self.chat_store.unread_targets(), [(target, 2)])
+
+        sent_target = self.chat_store.targets[0]
+        self.chat_store.send_message(self.backend, sent_target, "eigene Nachricht")
+        self.assertEqual(self.chat_store.unread_count(sent_target.id), 0)
+
+        reloaded = ChatStore(storage_path=self.storage_file)
+        self.assertEqual(reloaded.unread_count(target.id), 2)
+        self.assertTrue(reloaded.mark_read(target.id))
+        self.assertFalse(reloaded.mark_read(target.id))
+        self.assertEqual(ChatStore(storage_path=self.storage_file).unread_count(target.id), 0)
+
+        self._sync(self._chan("C: drei", timestamp=3))
+        self.chat_store.clear_history(target.id)
+        self.assertEqual(self.chat_store.unread_targets(), [])
+
     def test_default_targets(self):
         self.assertGreaterEqual(len(self.chat_store.targets), 3)
         tags = [target.display_tag for target in self.chat_store.targets]

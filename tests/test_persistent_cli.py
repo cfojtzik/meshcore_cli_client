@@ -402,6 +402,158 @@ class RealMeshCLITests(unittest.TestCase):
             backend.close()
             companion.close()
 
+    def test_real_meshcli_keeps_flood_scope_and_restores_it_after_restart(self):
+        import hashlib
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from companion_emulator import FakeCompanion
+
+        companion = FakeCompanion()
+        original = PersistentMeshCLI
+
+        def tcp_session(command, **kwargs):
+            index = command.index("-s")
+            command = (
+                command[:index]
+                + ["-t", "127.0.0.1", "-p", str(companion.tcp_port)]
+                + command[index + 4:]
+            )
+            return original(command, **kwargs)
+
+        region = hashlib.sha256(b"#de-bw").digest()[:16].hex()
+        config = Config(config_file=None)
+        config.port = "/dev/emulated"
+        config.timeout = 10
+        backend = MeshCoreBackend(config)
+        backend._meshcli_bin = str(REAL_MESHCLI)
+        try:
+            with patch("src.backend.executor.PersistentMeshCLI", side_effect=tcp_session):
+                self.assertTrue(backend.run_cli(["scope", "#de-bw"])[0])
+                self.assertEqual(companion.current_scope, region)
+                # Regression: meshcli's interactive loop used to revert the
+                # scope before the very next command.
+                self.assertTrue(backend.run_cli(["infos"])[0])
+                self.assertTrue(backend.run_cli(["sync_msgs"], json_mode=True)[0])
+                self.assertEqual(companion.current_scope, region)
+                self.assertEqual(backend.flood_scope, "#de-bw")
+
+                backend.close()  # A new session must send with the region again.
+                self.assertTrue(backend.run_cli(["infos"])[0])
+                self.assertEqual(companion.current_scope, region)
+
+                self.assertTrue(backend.run_cli(["scope", "*"])[0])
+                self.assertTrue(backend.run_cli(["infos"])[0])
+                self.assertEqual(companion.current_scope, "*")
+
+                self.assertTrue(backend.run_cli(["scope", "0"])[0])
+                self.assertTrue(backend.run_cli(["infos"])[0])
+                self.assertEqual(companion.current_scope, "default")
+                self.assertEqual(config.flood_scope, "")
+        finally:
+            backend.close()
+            companion.close()
+
+
+    def test_real_meshcli_long_prompt_does_not_leak_wrapped_echo(self):
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from companion_emulator import FakeCompanion
+
+        # Real-world case: long node name plus a flood scope in the prompt.
+        companion = FakeCompanion(node_name="DE|BW|LB CF-USB Long Name 32b")
+        original = PersistentMeshCLI
+
+        def tcp_session(command, **kwargs):
+            index = command.index("-s")
+            command = (
+                command[:index]
+                + ["-t", "127.0.0.1", "-p", str(companion.tcp_port)]
+                + command[index + 4:]
+            )
+            return original(command, **kwargs)
+
+        config = Config(config_file=None)
+        config.port = "/dev/emulated"
+        config.timeout = 10
+        backend = MeshCoreBackend(config)
+        backend._meshcli_bin = str(REAL_MESHCLI)
+        try:
+            with patch("src.backend.executor.PersistentMeshCLI", side_effect=tcp_session):
+                ok, out = backend.run_cli(["scope", "#de-bw-str-region"])
+                self.assertTrue(ok, out)
+                self.assertNotIn("MESHCORE_DONE", out)
+                ok, out = backend.run_cli(["infos"], json_mode=True)
+                self.assertTrue(ok, out)
+                self.assertNotIn("MESHCORE_DONE", out)
+                self.assertEqual(json.loads(out)["name"], companion.node_name)
+                ok, out = backend.run_cli(["public", "x" * 150])
+                self.assertNotIn("MESHCORE_DONE", out)
+        finally:
+            backend.close()
+            companion.close()
+
+
+class ScopeHandlingTests(unittest.TestCase):
+    def test_normalize_scope_and_interactive_scope_line(self):
+        from src.backend.persistent_cli import normalize_scope, scope_line
+
+        for default in ("", " 0 ", "None", "clear", None):
+            self.assertEqual(normalize_scope(default), "")
+        self.assertEqual(normalize_scope(" #de-bw "), "#de-bw")
+        self.assertEqual(scope_line("#de-bw"), "scope #de-bw")
+        self.assertEqual(scope_line(""), "scope 0")
+
+    def test_scope_command_also_updates_interactive_loop_scope(self):
+        session = PersistentMeshCLI(["meshcli"])
+        written = []
+
+        def fake_write(line):
+            written.append(line)
+            if line.startswith("$$echo"):
+                session._active.done = True
+
+        session._process = type("Proc", (), {"poll": staticmethod(lambda: None)})()
+        session._write_line = fake_write
+        session.execute(["scope", "#de-bw"], False, 1)
+        self.assertEqual(written[:2], ["$$scope '#de-bw'", "scope #de-bw"])
+
+        written.clear()
+        session.execute(["infos"], False, 1)
+        self.assertEqual(len(written), 2)  # Other commands are unchanged.
+
+    def test_invalid_scope_is_rejected_and_simulation_remembers_scope(self):
+        config = Config(config_file=None)
+        config.simulation_mode = True
+        backend = MeshCoreBackend(config)
+
+        ok, msg = backend.run_cli(["scope", "two", "words"])
+        self.assertFalse(ok)
+        self.assertEqual(backend.flood_scope, "")
+
+        self.assertTrue(backend.run_cli(["scope", "#de-bw"])[0])
+        self.assertEqual(config.flood_scope, "#de-bw")
+        self.assertTrue(backend.run_cli(["scope", "clear"])[0])
+        self.assertEqual(backend.flood_scope, "")
+
+    def test_failed_scope_restarts_session(self):
+        config = Config(config_file=None)
+        config.port = "/dev/test"
+        backend = MeshCoreBackend(config)
+        session = type(
+            "Session",
+            (),
+            {
+                "execute": lambda self, args, json_mode, timeout: "Error while setting scope",
+                "close": lambda self: None,
+            },
+        )()
+        backend._session = session
+        backend._session_key = (config.port, config.baudrate, backend._meshcli_bin)
+
+        ok, _ = backend.run_cli(["scope", "#de-bw"])
+        self.assertFalse(ok)
+        self.assertIsNone(backend._session)
+        self.assertEqual(config.flood_scope, "")
+
 
 class BackendSessionTests(unittest.TestCase):
     @patch("src.backend.executor.PersistentMeshCLI")

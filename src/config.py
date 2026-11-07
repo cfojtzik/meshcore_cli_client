@@ -15,6 +15,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "simulation_mode": False,
     "auto_sync_clock": False,
     "refresh_interval": 5,
+    # Flood scope (region) of the shared meshcli session; "" = device default.
+    "flood_scope": "",
 }
 
 
@@ -92,4 +94,14 @@ class Config:
     @refresh_interval.setter
     def refresh_interval(self, val: int) -> None:
         self.data["refresh_interval"] = val
+        self.save()
+
+    @property
+    def flood_scope(self) -> str:
+        value = self.data.get("flood_scope", "")
+        return value.strip() if isinstance(value, str) else ""
+
+    @flood_scope.setter
+    def flood_scope(self, val: str) -> None:
+        self.data["flood_scope"] = val
         self.save()
