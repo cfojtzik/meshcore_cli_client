@@ -4,7 +4,6 @@
 import argparse
 import sys
 
-from src.config import Config
 from src.ui.app import MeshCoreTUIApp
 
 
@@ -22,8 +21,8 @@ def main() -> None:
         "-b",
         "--baudrate",
         type=int,
-        default=115200,
-        help="Baudrate für die serielle Schnittstelle (Standard: 115200)",
+        default=None,
+        help="Baudrate für die serielle Schnittstelle (Standard: gespeicherte Konfiguration)",
     )
     parser.add_argument(
         "--simulate",
@@ -33,11 +32,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    app = MeshCoreTUIApp()
+    app = MeshCoreTUIApp(auto_select_port=args.port is None)
 
     if args.port:
         app.config.port = args.port
-    if args.baudrate:
+    if args.baudrate is not None:
         app.config.baudrate = args.baudrate
     if args.simulate:
         app.config.simulation_mode = True

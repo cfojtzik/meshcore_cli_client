@@ -61,6 +61,7 @@ meshcore_cli_client/
 │   └── ui/
 │       ├── colors.py       # Curses-Farbschema & Palettenverwaltung
 │       ├── widgets.py      # Dialoge, Eingabemasken, Scrollfenster & Boxen
+│       ├── async_task.py   # Nicht blockierende Backend-Hintergrundaufgaben
 │       ├── app.py          # Hauptmenü-Controller & Event-Loop
 │       └── views/
 │           ├── connection.py  # USB-Port-Scan, Baudrate & Verbindungstest
@@ -74,7 +75,9 @@ meshcore_cli_client/
 └── tests/
     ├── test_client.py      # Basis- & Konfigurationstests
     ├── test_chat.py        # Tests für Chat-Speicher, Routing & DMs
-    └── test_contacts.py    # Tests für Gehört-Liste, Speichern & Löschen
+    ├── test_contacts.py    # Tests für Gehört-Liste, Speichern & Löschen
+    ├── test_ui.py          # Curses-, Chat-, Lösch- und Scheduler-Tests
+    └── test_auto_refresh.py# Tests für automatische Aktualisierung & Intervalle
 ```
 
 ---
@@ -102,15 +105,19 @@ meshcore_cli_client/
 * **Unterstützung für Namen mit Leerzeichen:** Saubere Adressierung von Kontakten mit komplexen Namen (z. B. `CF T-Deck`).
 * **Persistenter Verlauf:** Speicherung des Chatverlaufs in `~/.config/meshcore/chat_history.json`.
 * **Sync-Funktion (`[R]`):** Direkter Abruf neuer ungelesener Nachrichten über `sync_msgs`.
+* **Automatischer Empfang:** Ungelesene Nachrichten werden zusätzlich im konfigurierbaren `refresh_interval` (standardmäßig 5 Sekunden) nicht blockierend im Hintergrund abgerufen.
+* **Nachrichten löschen:** Im Verlaufsfokus kann eine ausgewählte lokale Nachricht mit `[Entf]` / `[X]` oder der komplette lokale Raumverlauf mit `[L]` gelöscht werden. In der Raumliste entfernt `[Entf]` / `[X]` den ausgewählten Chat einschließlich des kompletten lokalen Verlaufs, ohne den Kontakt oder Kanal auf dem Companion zu löschen.
 
 ### 4. Kanal- & Scope-Verwaltung
 * Konfiguration von bis zu 8 Kanälen (Kanal 0 Public, Kanäle 1–7 für Teams/Gruppen).
 * Anzeige konfigurierter Kanäle (`get_channels`) und Zuweisung von Kanalnamen und PSK-Schlüsseln (`set_channel`).
+* Löschen der Kanäle 1–7 auf dem Companion (`remove_channel`) einschließlich des zugehörigen lokalen Kanalverlaufs nach Bestätigung.
 * Regionale Begrenzung von Paketen über den Flood-Scope (`scope <region>`).
 
 ### 5. Gehörte Nodes & Kontaktverwaltung (Dual-Tab)
 * **Tab 1: 📡 Gehörte Nodes (Discovered / Pending):**
   * Interaktive Liste über Funk empfangener Knoten (`pending_contacts`, `node_discover`) mit Signalwerten (SNR, RSSI), Knotentyp, Public Key und Zeitstempel.
+  * Automatische Aktualisierung der Pending-Liste im konfigurierten Refresh-Intervall; vollständige Discovery beim Öffnen und höchstens alle 30 Sekunden.
   * **Übernahme in Kontakte (`[S]` oder `[Enter]`):** Ausgewählte gehörte Knoten werden mit anpassbarem Namen und Typ direkt in das feste Adressbuch des Nodes übernommen (`add_pending` / `add_contact`).
   * Einzelne gehörte Knoten löschen (`[L]` / `[Entf]`) oder gesamte Liste leeren (`[F]`).
 * **Tab 2: 👥 Gespeicherte Kontakte (Contacts):**
@@ -153,7 +160,11 @@ meshcore_cli_client/
 | | `[Enter]` *(in Raumliste)*| Raum/Kontakt aktivieren und Fokus in Eingabezeile setzen |
 | | `[R]` | Ungelesene Nachrichten abrufen (`sync_msgs`) |
 | | `[N]` | Neuen Chat starten (`@Kontakt` oder `#Kanal`) |
-| | `[L]` | Verlauf des aktiven Chats leeren |
+| | `[Entf]` / `[X]` *(in Raumliste)* | Chat und kompletten lokalen Verlauf löschen |
+| | `[Entf]` / `[X]` *(im Verlauf)* | Ausgewählte lokale Nachricht löschen |
+| | `[L]` | Lokalen Verlauf des aktiven Chats leeren, Chat-Eintrag behalten |
+| **Verbindung** | `[6]` | Auto-Refresh-Intervall (2/5/10/30/60 Sekunden) wechseln |
+| **Kanalverwaltung** | `[8]` | Kanal 1–7 auf Companion und lokal löschen |
 | **Knoten-Verwaltung** | `[Tab]` / `[← / →]` | Umschalten: **Gehörte Nodes** ⇄ **Gespeicherte Kontakte** |
 | *(Tab 1: Gehört)* | `[S]` / `[Enter]` | **Ausgewählten Knoten in Kontaktliste speichern** |
 | | `[L]` / `[Entf]` / `[X]` | Ausgewählten gehörten Knoten entfernen |

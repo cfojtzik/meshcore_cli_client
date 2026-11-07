@@ -80,3 +80,16 @@ class Config:
     def simulation_mode(self, val: bool) -> None:
         self.data["simulation_mode"] = val
         self.save()
+
+    @property
+    def refresh_interval(self) -> int:
+        try:
+            value = int(self.data.get("refresh_interval", 5))
+        except (TypeError, ValueError, OverflowError):
+            value = 5
+        return max(1, min(300, value))
+
+    @refresh_interval.setter
+    def refresh_interval(self, val: int) -> None:
+        self.data["refresh_interval"] = val
+        self.save()
