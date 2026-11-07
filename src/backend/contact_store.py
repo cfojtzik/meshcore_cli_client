@@ -517,13 +517,73 @@ class NodeItem:
         )
 
 
+MANUAL_ADD_RE = re.compile(
+    r"manual_add_contacts\"?\s*:\s*\"?(true|false|on|off|yes|no|1|0)\b", re.IGNORECASE
+)
+AUTOADD_CONFIG_RE = re.compile(r"\b0x([0-9a-f]{1,2})\b", re.IGNORECASE)
+# Firmware autoadd_config bits which still auto-save these node types while
+# manual_add_contacts is on (bit 0 only controls overwriting when full).
+AUTOADD_TYPE_BITS = ((0x02, "Companion"), (0x04, "Repeater"), (0x08, "Room"), (0x10, "Sensor"))
+
+
+def _parse_manual_add(output: Any) -> Optional[bool]:
+    """Return manual_add_contacts from JSON or text output, None if unknown."""
+    match = MANUAL_ADD_RE.search(_strip_ansi(str(output or "")))
+    if match is None:
+        return None
+    return match.group(1).lower() in ("true", "on", "yes", "1")
+
+
 class ContactStore:
     def __init__(self, storage_path: Optional[Path] = HEARD_NODES_FILE) -> None:
         self.storage_path = storage_path
         self.cached_heard: List[NodeItem] = []
         self.cached_contacts: List[NodeItem] = []
         self.dismissed_heard: set[str] = set()
+        # Companion setting: True = adverts are saved as contacts automatically,
+        # False = new nodes only enter the pending list. None until read.
+        self.auto_save: Optional[bool] = None
         self.load_heard_cache()
+
+    def fetch_auto_save(self, backend: MeshCoreBackend) -> Optional[bool]:
+        """Read whether the companion auto-saves heard nodes as contacts."""
+        ok, res = backend.run_cli(["get", "manual_add_contacts"], json_mode=True)
+        manual = _parse_manual_add(res) if ok else None
+        self.auto_save = None if manual is None else not manual
+        return self.auto_save
+
+    def set_auto_save(self, backend: MeshCoreBackend, enabled: bool) -> Tuple[bool, str]:
+        """Enable/disable automatic saving of heard nodes on the companion."""
+        ok, res = backend.run_cli(
+            ["set", "manual_add_contacts", "off" if enabled else "on"]
+        )
+        if not ok:
+            return False, f"Einstellung konnte nicht gesetzt werden: {res}"
+        # Read back so the shown state reflects the device, not the request.
+        if self.fetch_auto_save(backend) is not enabled:
+            return False, "Der Companion hat die Einstellung nicht übernommen."
+        if enabled:
+            return True, (
+                "Automatisches Speichern ist AN: Der Companion speichert jeden "
+                "gehörten Node sofort als Kontakt."
+            )
+
+        message = (
+            "Automatisches Speichern ist AUS: Neue Nodes erscheinen unter "
+            "„Gehörte Nodes“ und werden erst mit [S] gespeichert."
+        )
+        # With manual mode on, autoadd_config may still auto-save some types.
+        cfg_ok, cfg_res = backend.run_cli(["get", "autoadd_config"])
+        match = AUTOADD_CONFIG_RE.search(str(cfg_res or "")) if cfg_ok else None
+        if match is not None:
+            flags = int(match.group(1), 16)
+            still_saved = [name for bit, name in AUTOADD_TYPE_BITS if flags & bit]
+            if still_saved:
+                message += (
+                    "\n\nHinweis: Laut autoadd_config speichert der Companion "
+                    f"weiterhin automatisch: {', '.join(still_saved)}."
+                )
+        return True, message
 
     def load_heard_cache(self) -> None:
         """Load current dict storage and legacy list-only heard node files."""

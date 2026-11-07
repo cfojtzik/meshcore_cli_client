@@ -107,6 +107,19 @@ class FakeContactStore:
         self.auto_error = auto_error
         self.auto_delay = auto_delay
         self.auto_completed = threading.Event()
+        self.auto_save = None
+        self.auto_save_reads = 0
+        self.auto_save_writes = []
+
+    def fetch_auto_save(self, backend):
+        self.auto_save_reads += 1
+        self.auto_save = True
+        return self.auto_save
+
+    def set_auto_save(self, backend, enabled):
+        self.auto_save_writes.append(enabled)
+        self.auto_save = enabled
+        return True, "ok"
 
     def fetch_saved_contacts(self, backend):
         self.saved_calls += 1
@@ -198,6 +211,33 @@ class ContactsAutoRefreshTests(unittest.TestCase):
         rendered = "".join(write[2] for write in window.writes)
         self.assertIn("Relay", rendered)  # Cached data is shown immediately.
         self.assertIn("Auto: 5s", rendered)
+
+    def test_key_m_toggles_auto_save_after_confirmation(self):
+        store = FakeContactStore()
+        window = FakeWindow(keys=[None, None, ord("m"), ord("M"), None, 27])
+        config = SimpleNamespace(
+            simulation_mode=True, port="/dev/test", refresh_interval=5
+        )
+
+        with (
+            patch("src.ui.views.contacts.ContactStore", return_value=store),
+            patch("src.ui.views.contacts.BackgroundTask", InlineTask),
+            patch("src.ui.views.contacts.run_with_progress", side_effect=immediate_progress),
+            # First toggle confirmed, second one cancelled.
+            patch("src.ui.views.contacts.prompt_confirm", side_effect=[True, False]) as confirm,
+            patch("src.ui.views.contacts.show_message") as show_message,
+        ):
+            run_contacts_view(window, object(), config)
+
+        self.assertEqual(store.auto_save_reads, 1)  # Read once in the background.
+        self.assertEqual(store.auto_save_writes, [False])
+        self.assertIs(store.auto_save, False)
+        self.assertEqual(confirm.call_args_list[0].args[2], "Auto-Speichern ist AN. Ausschalten?")
+        self.assertEqual(confirm.call_args_list[1].args[2], "Auto-Speichern ist AUS. Einschalten?")
+        show_message.assert_called_once()
+        rendered = "".join(write[2] for write in window.writes)
+        self.assertIn("Auto-Speichern: an", rendered)
+        self.assertIn("Auto-Speichern: aus", rendered)
 
     def test_busy_background_task_finishes_before_exit(self):
         store = FakeContactStore(auto_delay=0.02)

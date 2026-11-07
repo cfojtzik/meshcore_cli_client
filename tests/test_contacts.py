@@ -73,6 +73,58 @@ class TestContactStore(unittest.TestCase):
     def tearDown(self):
         self.tmp_dir.cleanup()
 
+    def test_auto_save_toggle_in_simulation(self):
+        self.assertTrue(self.store.fetch_auto_save(self.backend))
+
+        ok, msg = self.store.set_auto_save(self.backend, False)
+        self.assertTrue(ok, msg)
+        self.assertIs(self.store.auto_save, False)
+        self.assertIn("AUS", msg)
+        self.assertNotIn("Hinweis", msg)  # autoadd_config 0x00 saves nothing
+
+        ok, msg = self.store.set_auto_save(self.backend, True)
+        self.assertTrue(ok, msg)
+        self.assertIs(self.store.fetch_auto_save(self.backend), True)
+
+    def test_auto_save_uses_manual_add_contacts_and_reads_back(self):
+        backend = ScriptedBackend(
+            (True, "manual add contact: True"),
+            (True, '{"manual_add_contacts": true}'),
+            (True, "0x04"),
+        )
+        ok, msg = self.store.set_auto_save(backend, False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(
+            [call[0] for call in backend.calls],
+            [
+                ["set", "manual_add_contacts", "on"],
+                ["get", "manual_add_contacts"],
+                ["get", "autoadd_config"],
+            ],
+        )
+        self.assertIs(self.store.auto_save, False)
+        # autoadd_config bit 0x04 still auto-saves repeaters in manual mode.
+        self.assertIn("Repeater", msg)
+
+    def test_auto_save_reports_unconfirmed_or_failed_change(self):
+        backend = ScriptedBackend(
+            (True, "manual add contact: False"),
+            (True, "manual_add_contacts: True"),  # Device did not change.
+        )
+        ok, msg = self.store.set_auto_save(backend, True)
+        self.assertFalse(ok)
+        self.assertIs(self.store.auto_save, False)
+
+        backend = ScriptedBackend((False, "Error : timeout"))
+        ok, msg = self.store.set_auto_save(backend, True)
+        self.assertFalse(ok)
+        self.assertIn("timeout", msg)
+
+        backend = ScriptedBackend((False, "Error"))
+        self.assertIsNone(self.store.fetch_auto_save(backend))
+        self.assertIsNone(self.store.auto_save)
+
     def test_fetch_saved_contacts(self):
         contacts = self.store.fetch_saved_contacts(self.backend)
         self.assertTrue(len(contacts) >= 4)

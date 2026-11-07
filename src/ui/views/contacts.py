@@ -104,11 +104,21 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
             return None
         return result.value
 
+    auto_save_state = {"read": False}
+
     def refresh_nodes(discover: bool = False) -> Any:
+        if not auto_save_state["read"]:
+            # Read the companion's auto-save setting once, in the background.
+            auto_save_state["read"] = True
+            store.fetch_auto_save(backend)
         # The persistent CLI also keeps device-side contacts current when
         # adverts are auto-added instead of entering the manual pending queue.
         store.fetch_saved_contacts(backend)
         return store.fetch_heard_nodes(backend, discover=discover)
+
+    def auto_save_text() -> str:
+        state = store.auto_save
+        return "?" if state is None else ("an" if state else "aus")
 
     stdscr.timeout(100)
     # No blocking load screen: show cached data at once. A quick refresh runs
@@ -210,11 +220,12 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
             draw_header(stdscr, f"Knoten-Verwaltung [{tab_title}]", mode_text)
 
             if active_tab == TAB_HEARD:
-                status_left = "[Tab/←/→] Tab | [S/Enter] Speichern/Chat | [L/Entf] Löschen | [R] Scan | [F] Leeren | [Esc] Menü"
+                status_left = "[Tab/←/→] Tab | [S/Enter] Speichern/Chat | [L/Entf] Löschen | [R] Scan | [F] Leeren | [M] Auto-Speichern | [Esc] Menü"
                 status_right = f"Gehört: {heard_count}"
             else:
-                status_left = "[Tab/←/→] Tab | [C/Enter] Chat | [D] Info | [P] Pfad | [L/Entf] Löschen | [Esc] Menü"
+                status_left = "[Tab/←/→] Tab | [C/Enter] Chat | [D] Info | [P] Pfad | [L/Entf] Löschen | [M] Auto-Speichern | [Esc] Menü"
                 status_right = f"Kontakte: {saved_count}"
+            status_right = f"Auto-Speichern: {auto_save_text()} | {status_right}"
             auto_status = f"Auto: {refresh_interval}s"
             if task.busy and pending_auto is not None:
                 auto_status += f" ({pending_label} läuft …)"
@@ -346,6 +357,35 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 break
             if key in (ord("\t"), curses.KEY_RIGHT, curses.KEY_LEFT):
                 active_tab = TAB_SAVED if active_tab == TAB_HEARD else TAB_HEARD
+            elif key in (ord("m"), ord("M")):
+                # Companion setting manual_add_contacts, inverted for the user.
+                if store.auto_save is None:
+                    run_io("Auto-Speichern lesen", lambda: store.fetch_auto_save(backend))
+                current = store.auto_save
+                if current is None:
+                    if not task.busy:
+                        show_message(
+                            stdscr,
+                            "Auto-Speichern",
+                            "Die Einstellung konnte nicht vom Companion gelesen werden.",
+                            is_error=True,
+                        )
+                    continue
+                enable = not current
+                question = (
+                    "Auto-Speichern ist AUS. Einschalten?"
+                    if enable
+                    else "Auto-Speichern ist AN. Ausschalten?"
+                )
+                if prompt_confirm(stdscr, "Auto-Speichern neuer Nodes", question):
+                    result = run_io(
+                        "Auto-Speichern setzen",
+                        lambda enable=enable: store.set_auto_save(backend, enable),
+                    )
+                    if result is not None:
+                        ok, msg = result
+                        show_message(stdscr, "Auto-Speichern", msg, is_error=not ok)
+                        status_notice = f"Auto-Speichern: {auto_save_text()}"
             elif key == ord("1"):
                 active_tab = TAB_HEARD
             elif key == ord("2"):

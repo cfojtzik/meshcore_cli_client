@@ -62,6 +62,7 @@ class MeshCoreBackend:
         self._sim_contacts = [dict(c) for c in MOCK_CONTACTS]
         self._sim_heard = [dict(h) for h in MOCK_HEARD_NODES]
         self._sim_channels = [dict(c) for c in MOCK_CHANNELS]
+        self._sim_manual_add = False  # Firmware default: auto-save contacts
 
     def _find_meshcli(self) -> str:
         """Find the meshcli executable in venv or system PATH."""
@@ -542,10 +543,17 @@ class MeshCoreBackend:
             return True, f"Flood scope set to '{scope}'."
         elif main_cmd == "get":
             param = args[1] if len(args) > 1 else "all"
+            if param == "manual_add_contacts":
+                return True, json.dumps({"manual_add_contacts": self._sim_manual_add})
+            if param == "autoadd_config":
+                return True, "0x00"
             return True, f"Parameter '{param}': default_value_ok"
         elif main_cmd == "set":
             param = args[1] if len(args) > 1 else "?"
             val = args[2] if len(args) > 2 else "?"
+            if param == "manual_add_contacts":
+                self._sim_manual_add = val.lower() in ("on", "true", "yes", "1")
+                return True, f"manual add contact: {self._sim_manual_add}"
             return True, f"Parameter '{param}' updated to '{val}'."
         else:
             return False, f"Unknown simulation command: {' '.join(args)}"
