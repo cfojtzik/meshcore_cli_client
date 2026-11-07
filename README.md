@@ -79,6 +79,16 @@ cd meshcore_cli_client
 ./run.sh
 ```
 
+Beim ersten Start erstellt das Skript die virtuelle Umgebung und installiert automatisch alle Abhängigkeiten aus `requirements.txt` (einschließlich `pyserial` und `meshcore-cli`). Dafür wird eine Internetverbindung benötigt. Bei späteren Starts werden die Abhängigkeiten nur bei Änderungen oder fehlenden Modulen erneut installiert.
+
+Falls antiX/Debian beim Erstellen der Umgebung einen `venv`- oder `pip`-Fehler meldet, zuerst die benötigten Systempakete installieren:
+
+```bash
+sudo apt update
+sudo apt install python3-venv python3-pip
+./run.sh
+```
+
 ### Starten im Simulationsmodus (ohne USB-Hardware)
 ```bash
 ./run.sh --simulate
