@@ -45,6 +45,10 @@ def emit_contact(name="Heard Relay", key="ab" * 32):
     print(json.dumps({"event": "new_contact", "contact": contact}), flush=True)
 
 
+def emit_advert(key="ef" * 32):
+    print(json.dumps({"event": "advert", "public_key": key}), flush=True)
+
+
 def emit_message(text="asynchronous"):
     print(json.dumps({"type": "PRIV", "pubkey_prefix": "def", "text": text}), flush=True)
 
@@ -57,11 +61,25 @@ for raw_line in sys.stdin:
     line = raw_line.strip()
     if line.startswith("$$echo "):
         print(line.split()[-1], flush=True)
-    elif line in ("$$set print_new_contacts on", "$$set json_msgs on"):
+    elif line in (
+        "$$set print_new_contacts on",
+        "$$set print_adverts on",
+        "$$set json_msgs on",
+    ):
         pass
     elif line == "$$infos":
         emit_contact()
         print("Node information", flush=True)
+    elif line == "$$advert_only":
+        emit_advert()
+    elif line == "$$.contacts":
+        key = "ef" * 32
+        print(json.dumps({key[:12]: {
+            "public_key": key,
+            "adv_name": "Auto Saved Relay",
+            "type": 2,
+            "last_advert": 123,
+        }}), flush=True)
     elif line == "$$arm_event":
         threading.Timer(0.03, emit_contact, kwargs={"name": "Idle Relay", "key": "cd" * 32}).start()
     elif line == "$$arm_message":
@@ -256,12 +274,16 @@ class EventBufferTests(unittest.TestCase):
             events.merge_pending(
                 [{"public_key": "ab" * 32, "adv_name": "Persistent Relay"}]
             )
+            events.record_advert("ef" * 32)
 
             reloaded = EventBuffer(path)
             self.assertEqual(reloaded.messages[0]["text"], "retained")
             self.assertEqual(
                 reloaded.pending_snapshot()["ab" * 32]["adv_name"],
                 "Persistent Relay",
+            )
+            self.assertEqual(
+                reloaded.advert_snapshot()[0]["public_key"], "ef" * 32
             )
             self.assertEqual(reloaded.deliver_sync([])[0]["text"], "retained")
             self.assertEqual(reloaded.deliver_sync([]), [])
@@ -296,9 +318,15 @@ class FullBackendProcessTests(unittest.TestCase):
                 ok, output = backend.run_cli(["infos"])
                 self.assertTrue(ok, output)
 
+                ok, output = backend.run_cli(["advert_only"])
+                self.assertTrue(ok, output)
                 contacts = ContactStore(storage_path=None)
+                contacts.fetch_saved_contacts(backend)
                 heard = contacts.fetch_heard_nodes(backend)
-                self.assertIn("Heard Relay", [node.name for node in heard])
+                by_name = {node.name: node for node in heard}
+                self.assertIn("Heard Relay", by_name)
+                self.assertIn("Auto Saved Relay", by_name)
+                self.assertTrue(by_name["Auto Saved Relay"].is_saved)
 
                 chats = ChatStore(storage_path=None)
                 self.assertGreaterEqual(chats.sync_from_backend(backend), 3)

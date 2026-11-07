@@ -184,7 +184,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
             draw_header(stdscr, f"Knoten-Verwaltung [{tab_title}]", mode_text)
 
             if active_tab == TAB_HEARD:
-                status_left = "[Tab/←/→] Tab | [S/Enter] Speichern | [L/Entf] Löschen | [R] Scan | [F] Leeren | [Esc] Menü"
+                status_left = "[Tab/←/→] Tab | [S/Enter] Speichern/Chat | [L/Entf] Löschen | [R] Scan | [F] Leeren | [Esc] Menü"
                 status_right = f"Gehört: {heard_count}"
             else:
                 status_left = "[Tab/←/→] Tab | [C/Enter] Chat | [D] Info | [P] Pfad | [L/Entf] Löschen | [Esc] Menü"
@@ -242,7 +242,7 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
 
             if not current_list:
                 empty_msg = (
-                    "Keine ungespeicherten Nodes gehört. [R] startet die Discovery."
+                    "Noch keine Adverts/Nodes gehört. [R] startet die Discovery."
                     if active_tab == TAB_HEARD
                     else "Noch keine Kontakte gespeichert."
                 )
@@ -262,7 +262,8 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                     prefix = "▶ " if is_selected else "  "
                     if active_tab == TAB_HEARD:
                         key_preview = f"{node.key[:10]}..." if node.key else "n/a"
-                        row_text = f"{prefix}{node.name:<20} {node.type_name:<12} {node.snr:<10} {node.rssi:<10} {node.last_seen:<16} {key_preview}"
+                        saved_mark = "✓" if node.is_saved else " "
+                        row_text = f"{prefix}{saved_mark}{node.name:<19} {node.type_name:<12} {node.snr:<10} {node.rssi:<10} {node.last_seen:<16} {key_preview}"
                     else:
                         row_text = f"{prefix}{node.name:<20} {node.type_name:<12} {node.path:<12} {node.snr:<10} {node.rssi:<10} {node.hops}"
                     attr = (
@@ -334,7 +335,18 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                 else:
                     selected_saved_idx = min(max(0, len(current_list) - 1), selected_saved_idx + 1)
             elif active_tab == TAB_HEARD and key in (ord("s"), ord("S"), 10, 13, curses.KEY_ENTER):
-                if current_list and selected_heard_idx < len(current_list):
+                if current_list and selected_heard_idx < len(current_list) and current_list[selected_heard_idx].is_saved:
+                    node = current_list[selected_heard_idx]
+                    if key in (10, 13, curses.KEY_ENTER):
+                        run_chat_view(stdscr, backend, config, initial_target=node.name)
+                        run_io("Kontakte aktualisieren", lambda: refresh_nodes(discover=False))
+                    else:
+                        show_message(
+                            stdscr,
+                            "Bereits gespeichert",
+                            f"Knoten '{node.name}' ist bereits in der Kontaktliste. [Enter] öffnet den Chat.",
+                        )
+                elif current_list and selected_heard_idx < len(current_list):
                     node = current_list[selected_heard_idx]
                     custom_name = prompt_input(
                         stdscr,
@@ -414,7 +426,11 @@ def run_contacts_view(stdscr: curses.window, backend: MeshCoreBackend, config: C
                         f"SNR (Signal):    {node.snr}\n"
                         f"RSSI:            {node.rssi}\n"
                         f"Zuletzt gehört:  {node.last_seen}\n\n"
-                        "Status: Über Funk empfangen (noch nicht gespeichert)."
+                        + (
+                            "Status: Über Funk empfangen und bereits gespeichert."
+                            if node.is_saved
+                            else "Status: Über Funk empfangen (noch nicht gespeichert)."
+                        )
                     )
                     display_scrollable_text(stdscr, f"Details: {node.name}", info_text)
             elif active_tab == TAB_SAVED and key in (ord("c"), ord("C"), 10, 13, curses.KEY_ENTER):

@@ -44,7 +44,7 @@ Ein ressourcenschonender, menügesteuerter Terminal-Client für **MeshCore**, op
 5. **👥 Gehörte Nodes & Kontaktliste (Dual-Tab Ansicht):**
    * **Tab 1: 📡 Gehörte Nodes:**
      * Interaktive Liste aller über Funk empfangener Knoten (`node_discover`, `pending_contacts`) mit SNR, RSSI, Knotentyp und Timestamp.
-     * **Automatische Aktualisierung:** Pending-Nodes und gespeicherte Kontakte werden im konfigurierten Intervall aktualisiert; eine vollständige Discovery erfolgt beim Öffnen und anschließend höchstens alle 30 Sekunden. Adverts werden durch die gemeinsame `meshcli`-Sitzung auch zwischen den Aktualisierungen erfasst.
+     * **Automatische Aktualisierung:** Pending-Nodes und gespeicherte Kontakte werden im konfigurierten Intervall aktualisiert; eine vollständige Discovery erfolgt beim Öffnen und anschließend höchstens alle 30 Sekunden. Adverts werden durch die gemeinsame `meshcli`-Sitzung auch zwischen den Aktualisierungen erfasst – sowohl von neuen (Pending-)Nodes als auch von bereits gespeicherten Kontakten. Gespeicherte Nodes sind in der Liste mit `✓` markiert; `[Enter]` öffnet für sie direkt den Chat.
      * **Übernahme in Kontakte (`[S]`):** Speichert einen gehörten Knoten direkt in das feste Adressbuch des MeshCore-Nodes (`add_pending` / `add_contact`).
      * Scan aktualisieren (`[R]`) und Liste leeren (`[F]`).
    * **Tab 2: 👥 Gespeicherte Kontakte:**

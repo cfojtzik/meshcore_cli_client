@@ -1,8 +1,8 @@
-"""Manager and store for heard nodes (discovered/pending) and saved contacts."""
+"""Store heard adverts/discovered/pending nodes and saved contacts."""
 
 import json
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -634,6 +634,52 @@ class ContactStore:
         if ok and res:
             append_from_output(res)
 
+        # ADVERTISEMENT and NEW_CONTACT are different meshcli events. Adverts
+        # also include nodes which the companion auto-added to its saved list.
+        try:
+            advert_records = getattr(backend, "get_heard_adverts", lambda: [])()
+        except Exception:
+            advert_records = []
+        if not isinstance(advert_records, list):
+            advert_records = []
+        for advert in advert_records:
+            if not isinstance(advert, dict):
+                continue
+            key = str(
+                advert.get("public_key") or advert.get("pubkey") or advert.get("key") or ""
+            ).strip()
+            if not key:
+                continue
+            timestamp = _first_value(advert, "last_heard", "last_advert", "timestamp")
+            saved_match = next(
+                (
+                    contact
+                    for contact in self.cached_contacts
+                    if contact.key and _keys_match(contact.key, key)
+                ),
+                None,
+            )
+            if saved_match is not None:
+                item = replace(
+                    saved_match,
+                    last_seen=_format_timestamp(timestamp),
+                    is_saved=True,
+                )
+            else:
+                existing = next(
+                    (node for node in newly_heard if node.key and _keys_match(node.key, key)),
+                    None,
+                )
+                if existing is not None:
+                    if timestamp is not None:
+                        existing.last_seen = _format_timestamp(timestamp)
+                    continue
+                item = _node_from_record(
+                    {"public_key": key, "last_advert": timestamp}, is_saved=False
+                )
+            if item is not None:
+                newly_heard.append(item)
+
         saved_names = {contact.name.strip().casefold() for contact in self.cached_contacts}
         saved_keys = [contact.key for contact in self.cached_contacts if contact.key]
 
@@ -643,7 +689,7 @@ class ContactStore:
             )
 
         for item in newly_heard:
-            if is_saved(item) or self._is_dismissed(item):
+            if (not item.is_saved and is_saved(item)) or self._is_dismissed(item):
                 continue
 
             existing_idx = next(
@@ -666,15 +712,30 @@ class ContactStore:
                     item.key = existing.key
                 if item.last_seen == "n/a" and existing.last_seen != "n/a":
                     item.last_seen = existing.last_seen
+                # An advert placeholder (key prefix only) must not replace an
+                # already known name and type of the same node.
+                placeholder = bool(item.key) and item.name == item.key[:12]
+                if placeholder and existing.name != item.name:
+                    item.name = existing.name
+                    item.type_id = existing.type_id
+                    item.type_name = existing.type_name
                 self.cached_heard[existing_idx] = item
             else:
                 self.cached_heard.append(item)
 
-        self.cached_heard = [
-            node
-            for node in self.cached_heard
-            if not is_saved(node) and not self._is_dismissed(node)
-        ]
+        retained: List[NodeItem] = []
+        for node in self.cached_heard:
+            if self._is_dismissed(node):
+                continue
+            if node.is_saved:
+                # Re-evaluate a stored flag: a deleted contact is heard again
+                # as an unsaved node. Without a loaded contact list, keep it.
+                if self.cached_contacts and not is_saved(node):
+                    node.is_saved = False
+                retained.append(node)
+            elif not is_saved(node):
+                retained.append(node)
+        self.cached_heard = retained
         self.save_heard_cache()
         return self.cached_heard
 
@@ -686,6 +747,10 @@ class ContactStore:
         custom_type: Optional[int] = None,
     ) -> Tuple[bool, str]:
         """Save a heard/discovered node with its actual MeshCore type ID."""
+        if node.is_saved:
+            self.fetch_saved_contacts(backend)
+            return True, f"Knoten '{node.name}' ist bereits in der Kontaktliste gespeichert."
+
         target_name = (custom_name or node.name).strip()
         type_id = custom_type if custom_type is not None else node.type_id
 
@@ -722,6 +787,7 @@ class ContactStore:
         ok, res = backend.run_cli(["flush_pending"])
         if not ok:
             return False, f"Fehler beim Leeren der gehörten Knoten: {res}"
+        getattr(backend, "clear_heard_adverts", lambda: None)()
         self.cached_heard.clear()
         self.dismissed_heard.clear()
         self.save_heard_cache()

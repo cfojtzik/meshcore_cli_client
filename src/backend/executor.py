@@ -113,6 +113,21 @@ class MeshCoreBackend:
             return True, "Verbindung erfolgreich! Companion antwortet."
         return False, f"Fehler bei Verbindung mit {self.config.port}:\n{out}"
 
+    def get_heard_adverts(self) -> List[Dict[str, Any]]:
+        """Return advert events captured independently of pending contacts."""
+        if self.config.simulation_mode:
+            return []
+        with self._session_lock:
+            if self._event_buffer is None:
+                return []
+            return self._event_buffer.advert_snapshot()
+
+    def clear_heard_adverts(self) -> None:
+        """Clear the local advert list after the pending flush succeeds."""
+        with self._session_lock:
+            if self._event_buffer is not None:
+                self._event_buffer.clear_adverts()
+
     @staticmethod
     def _json_has_error(value: Any) -> bool:
         """Check structured CLI responses for application-level failures."""

@@ -62,6 +62,7 @@ class EventBuffer:
         self.messages: List[Dict[str, Any]] = []
         self.message_ids: List[str] = []
         self.pending_contacts: Dict[str, Dict[str, Any]] = {}
+        self.heard_adverts: Dict[str, Dict[str, Any]] = {}
         self._delivered_event_ids: Set[str] = set()
         self._load()
 
@@ -88,6 +89,7 @@ class EventBuffer:
                 return
             messages = data.get("messages", [])
             pending = data.get("pending_contacts", {})
+            adverts = data.get("heard_adverts", {})
             if isinstance(messages, list):
                 self.messages[:] = [dict(item) for item in messages if isinstance(item, dict)]
                 stored_ids = data.get("message_ids", [])
@@ -103,6 +105,10 @@ class EventBuffer:
                 for key, contact in pending.items():
                     if isinstance(contact, dict):
                         self.pending_contacts[self.contact_key(contact) or str(key)] = dict(contact)
+            if isinstance(adverts, dict):
+                for key, advert in adverts.items():
+                    if isinstance(advert, dict):
+                        self.heard_adverts[str(key)] = dict(advert)
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             # A broken spool must not block access to the companion.
             return
@@ -119,6 +125,7 @@ class EventBuffer:
                         "messages": self.messages,
                         "message_ids": self.message_ids,
                         "pending_contacts": self.pending_contacts,
+                        "heard_adverts": self.heard_adverts,
                     },
                     file,
                     ensure_ascii=False,
@@ -204,6 +211,26 @@ class EventBuffer:
     def pending_snapshot(self) -> Dict[str, Dict[str, Any]]:
         with self._lock:
             return {key: dict(contact) for key, contact in self.pending_contacts.items()}
+
+    def record_advert(self, public_key: str) -> None:
+        key = str(public_key or "").strip()
+        if not key:
+            return
+        with self._lock:
+            self.heard_adverts[key] = {
+                "public_key": key,
+                "last_heard": time.time(),
+            }
+            self._save_locked()
+
+    def advert_snapshot(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return [dict(advert) for advert in self.heard_adverts.values()]
+
+    def clear_adverts(self) -> None:
+        with self._lock:
+            self.heard_adverts.clear()
+            self._save_locked()
 
     def remove_pending(self, target: str) -> None:
         normalized = target.strip().casefold()
@@ -329,7 +356,10 @@ class PersistentMeshCLI:
             command is not None and self._command_name(command.args) in _MESSAGE_COMMANDS
         )
         for value in candidates:
-            if value.get("event") == "new_contact" and isinstance(value.get("contact"), dict):
+            if value.get("event") == "advert":
+                self._events.record_advert(str(value.get("public_key") or ""))
+                drop_line = True
+            elif value.get("event") == "new_contact" and isinstance(value.get("contact"), dict):
                 self._record_contact_event(value["contact"])
                 drop_line = True
             elif self._is_message(value):
@@ -475,6 +505,7 @@ class PersistentMeshCLI:
         self._ready_marker = f"__MESHCORE_READY_{uuid.uuid4().hex}__"
         try:
             self._write_line("$$set print_new_contacts on")
+            self._write_line("$$set print_adverts on")
             self._write_line("$$set json_msgs on")
             self._write_line(f"$$echo {self._ready_marker}")
             deadline = time.monotonic() + timeout

@@ -225,6 +225,61 @@ class TestContactStore(unittest.TestCase):
         self.assertEqual(heard[0].key, key)
         self.assertEqual(heard[0].last_seen, "n/a")
 
+    def test_adverts_include_auto_saved_and_unknown_nodes(self):
+        saved_key = "aa" * 32
+        unknown_key = "bb" * 32
+        self.store.cached_contacts = [
+            NodeItem(
+                name="Auto Saved",
+                key=saved_key,
+                type_id=2,
+                type_name="Repeater",
+                is_saved=True,
+            )
+        ]
+        backend = ScriptedBackend((True, "{}"))
+        backend.get_heard_adverts = lambda: [
+            {"public_key": saved_key, "last_heard": 1762432800},
+            {"public_key": unknown_key, "last_heard": 1762432801},
+        ]
+
+        heard = self.store.fetch_heard_nodes(backend)
+
+        by_name = {node.name: node for node in heard}
+        self.assertIn("Auto Saved", by_name)
+        self.assertTrue(by_name["Auto Saved"].is_saved)
+        self.assertIn(unknown_key[:12], by_name)
+        self.assertFalse(by_name[unknown_key[:12]].is_saved)
+
+    def test_deleted_contact_heard_again_is_no_longer_marked_saved(self):
+        key = "cc" * 32
+        self.store.cached_heard = [
+            NodeItem(name="Was Saved", key=key, is_saved=True)
+        ]
+        self.store.cached_contacts = [NodeItem(name="Other", key="dd" * 32, is_saved=True)]
+        backend = ScriptedBackend((True, "{}"))
+
+        heard = self.store.fetch_heard_nodes(backend)
+
+        self.assertEqual([node.name for node in heard], ["Was Saved"])
+        self.assertFalse(heard[0].is_saved)
+
+    def test_advert_placeholder_keeps_known_name_and_invalid_advert_api(self):
+        key = "ee" * 32
+        self.store.cached_heard = [
+            NodeItem(name="Known Relay", key=key, type_id=2, type_name="Repeater")
+        ]
+        backend = ScriptedBackend((True, "{}"))
+        backend.get_heard_adverts = lambda: [{"public_key": key, "last_heard": 1762432800}]
+
+        heard = self.store.fetch_heard_nodes(backend)
+        self.assertEqual(heard[0].name, "Known Relay")
+        self.assertEqual(heard[0].type_id, 2)
+
+        broken = ScriptedBackend((True, "{}"))
+        broken.get_heard_adverts = lambda: object()
+        self.assertEqual(self.store.fetch_heard_nodes(broken)[0].name, "Known Relay")
+
     def test_discover_runs_before_pending_fetch(self):
         key = "77" * 32
         discovered = json.dumps([{"pubkey": "88" * 32, "node_type": 2}])
