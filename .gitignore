@@ -31,3 +31,6 @@ ENV/
 .pytest_cache/
 *.log
 tui_config.json
+
+# Local project specification
+spec.md

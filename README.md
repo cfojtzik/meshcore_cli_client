@@ -104,3 +104,9 @@ cd meshcore_cli_client
 * **Kanalverwaltung `[8]`**: Kanal 1–7 auf dem Companion und seinen lokalen Verlauf löschen
 
 Das Refresh-Intervall wird in `~/.config/meshcore/tui_config.json` als `refresh_interval` gespeichert. Der Empfang erfolgt durch regelmäßiges `sync_msgs`-Polling, nicht durch eine dauerhaft belegte Push-Verbindung zum Companion.
+
+---
+
+## 📄 Lizenz
+
+Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
